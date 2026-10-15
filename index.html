@@ -73,18 +73,28 @@ input, select {
 select { max-width: 100%; }
 #soloN { flex: 1 1 200px; min-width: 0; width: 100%; }
 input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+/* no celular o "hover" fica preso depois do toque: só usa hover onde tem mouse, e nunca nas cartas */
+@media (hover: hover) {
+  button:not(.card):hover:not(:disabled) { background: #1d5a43; }
+  button.primary:hover:not(:disabled) { background: #f0bf5c; }
+  button.danger:hover:not(:disabled) { background: #6e2820; }
+  button.shout:hover:not(:disabled) { background: #cc3b31; }
+  .hand button.card:not(:disabled):hover { transform: translateY(-8px); }
+  }
+button.card { -webkit-appearance: none; appearance: none; -webkit-tap-highlight-color: transparent; font: inherit; color: var(--ink); }
+button.card.red { color: var(--red); }
 button {
   font: inherit; font-weight: 800; cursor: pointer; border-radius: 10px; padding: 10px 16px;
   border: 1px solid var(--line); background: #164a37; color: var(--text);
 }
-button:hover:not(:disabled) { background: #1d5a43; }
+
 button:disabled { opacity: .45; cursor: not-allowed; }
 button.primary { background: var(--brass); color: #2a1a05; border-color: #b8862c; }
-button.primary:hover:not(:disabled) { background: #f0bf5c; }
+
 button.danger { background: #5a1f19; border-color: #7a2c24; }
-button.danger:hover:not(:disabled) { background: #6e2820; }
+
 button.shout { font-family: var(--display); font-weight: 400; font-size: 18px; letter-spacing: 1px; background: var(--red); border-color: #8f241d; color: #fff3e6; }
-button.shout:hover:not(:disabled) { background: #cc3b31; }
+
 button.small { padding: 6px 10px; font-size: 13px; }
 .notice { background: #3a2a10; border: 1px solid #6b4d1b; color: #f3dcae; border-radius: 10px; padding: 10px 14px; font-size: 14px; }
 main#app { display: grid; gap: 18px; min-width: 0; }
@@ -135,7 +145,9 @@ main#app { display: grid; gap: 18px; min-width: 0; }
 .played { position: absolute; transform: translate(-50%, -50%); }
 .played .card { width: clamp(40px, 8.5vw, 64px); }
 .played.win .card { box-shadow: 0 0 0 3px var(--brass), 0 6px 14px rgba(0,0,0,.5); }
-.played.old { opacity: .55; }
+.played.old { opacity: 1; }
+.played.old .card { transform: scale(.88); }
+.last-trick { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); font-size: 11px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); background: rgba(0,0,0,.35); padding: 3px 10px; border-radius: 99px; white-space: nowrap; pointer-events: none; }
 .vira-tile .card { width: 30px; font-size: 10px; transform: rotate(-6deg); }
 .vira-tile .vlbl { font-size: 12px; color: var(--muted); font-weight: 600; line-height: 1.2; }
 .vira-tile .mrk { font-family: var(--display); font-weight: 400; font-size: 20px; color: var(--text); }
@@ -234,7 +246,6 @@ body.in-game .partner { flex: none; }
 
 .hand { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; min-height: 112px; align-items: flex-end; }
 .hand .card { width: clamp(64px, 18vw, 92px); font-size: clamp(14px, 3.4vw, 19px); transition: transform .12s; }
-.hand button.card:not(:disabled):hover { transform: translateY(-8px); }
 .hand button.card:disabled { opacity: 1; cursor: default; }
 .hand.playable button.card:not(:disabled) { box-shadow: 0 0 0 3px rgba(224,173,74,.75), 0 6px 14px rgba(0,0,0,.5); }
 .partner { display: grid; gap: 6px; justify-items: center; }
@@ -375,7 +386,7 @@ function deal(st) {
   st.result = null;
   st.phase = onzeTeam >= 0 ? 'onze' : 'play';
   addLog(st, `${nick(st, st.dealer)} deu as cartas. Vira ${cardLabel(vira)}, manilha é ${manilhaRank(vira)}.`);
-  if (ferro) addLog(st, 'Mão de ferro: ninguém vê as cartas do parceiro, vale 1.');
+  if (ferro) addLog(st, 'Mão de ferro: ninguém vê as cartas do parceiro, vale 1 e sem truco.');
   if (onzeTeam >= 0) addLog(st, `Mão de onze para o ${teamLabel(onzeTeam)}.`);
 }
 
@@ -564,11 +575,19 @@ const authApi = {
       await ref.set({ name, salt, hash: await pinHash(salt, pin), createdAt: Date.now() });
       return name;
     }
-    try {
-      const cred = await fbAuth.createUserWithEmailAndPassword(key + '@' + EMAIL_DOMAIN, pinPassword(pin));
-      await db.doc('contas/' + key).set({ name, uid: cred.user.uid, createdAt: Date.now() });
-      return name;
-    } catch (e) { throw { code: mapAuthError(e) }; }
+    const email = key + '@' + EMAIL_DOMAIN, pw = pinPassword(pin);
+    let cred;
+    try { cred = await fbAuth.createUserWithEmailAndPassword(email, pw); }
+    catch (e) {
+      if (e.code !== 'auth/email-already-in-use') throw { code: mapAuthError(e), raw: e.code };
+      // O login já existe. Se a senha bate, é uma conta que ficou pela metade (ex.: o cadastro foi apagado ao zerar): recupera.
+      try { cred = await fbAuth.signInWithEmailAndPassword(email, pw); }
+      catch { throw { code: 'exists' }; }
+      const s = await db.doc('contas/' + key).get().catch(() => null);
+      if (s && s.exists) return syncProfile(key, s.data(), cred.user);
+    }
+    await saveProfile(key, name, cred.user);
+    return name;
   },
   async signIn(key, pin) {
     if (!fbAuth) {
@@ -578,11 +597,15 @@ const authApi = {
       if ((await pinHash(d.salt, pin)) !== d.hash) throw { code: 'wrong' };
       return d.name;
     }
-    try {
-      await fbAuth.signInWithEmailAndPassword(key + '@' + EMAIL_DOMAIN, pinPassword(pin));
-      const s = await db.doc('contas/' + key).get();
-      return s.exists ? s.data().name : key;
-    } catch (e) { throw { code: mapAuthError(e) }; }
+    let cred;
+    try { cred = await fbAuth.signInWithEmailAndPassword(key + '@' + EMAIL_DOMAIN, pinPassword(pin)); }
+    catch (e) { throw { code: mapAuthError(e), raw: e.code }; }
+    const s = await db.doc('contas/' + key).get().catch(() => null);
+    if (s && s.exists) return syncProfile(key, s.data(), cred.user);
+    // login certo, mas sem cadastro (apagado ao zerar): refaz o cadastro com o nome digitado
+    const typed = (document.getElementById('lgName') || {}).value || key;
+    await saveProfile(key, typed.trim(), cred.user);
+    return typed.trim();
   },
   async verifyPin(pin) {
     if (!fbAuth) { await authApi.signIn(myId, pin); return; }
@@ -593,6 +616,16 @@ const authApi = {
   },
   signOut() { if (fbAuth) fbAuth.signOut(); },
 };
+// Salva o cadastro (nome de exibição) da conta. Se falhar, desfaz o login para não deixar conta pela metade.
+async function saveProfile(key, name, user) {
+  try { await db.doc('contas/' + key).set({ name, uid: user.uid, createdAt: Date.now() }); }
+  catch (e) { try { await fbAuth.signOut(); } catch {} throw { code: 'save', raw: 'firestore/' + (e && e.code === 'invalid_argument' ? 'permission-denied' : 'unavailable') }; }
+}
+// Cadastro que ainda aponta para um login antigo (apagado ao zerar): atualiza para o login atual.
+async function syncProfile(key, data, user) {
+  if (data.uid !== user.uid) await saveProfile(key, data.name || key, user);
+  return data.name || key;
+}
 function mapAuthError(e) {
   const c = (e && e.code) || '';
   if (c === 'auth/email-already-in-use') return 'exists';
@@ -600,6 +633,7 @@ function mapAuthError(e) {
   if (c === 'auth/wrong-password' || c === 'auth/invalid-credential' || c === 'auth/invalid-login-credentials') return 'wrong';
   if (c === 'auth/too-many-requests') return 'too_many';
   if (c === 'auth/operation-not-allowed') return 'setup';
+  if (c === 'auth/network-request-failed') return 'unavailable';
   return 'unavailable';
 }
 const AUTH_MSG = {
@@ -609,6 +643,7 @@ const AUTH_MSG = {
   too_many: 'Muitas tentativas erradas. Espere uns minutos e tente de novo.',
   setup: 'O login por e-mail e senha ainda não foi ligado no Firebase.',
   unavailable: 'Não deu para entrar agora. Confira a internet e tente de novo.',
+  save: 'O login deu certo, mas não deu para salvar o cadastro. Confira se as regras do Firestore foram publicadas.',
 };
 
 let db = null, myId = null, canWrite = true, localMode = false;
@@ -927,7 +962,7 @@ async function login(create) {
     showLobby();
   } catch (e) {
     done();
-    loginError(AUTH_MSG[e && e.code] || AUTH_MSG.unavailable);
+    loginError((AUTH_MSG[e && e.code] || AUTH_MSG.unavailable) + (e && e.raw ? ` (código: ${e.raw})` : ''));
   }
 }
 function logout() {
@@ -1336,8 +1371,8 @@ function rulesHtml() {
     <li>Com truco (ou seis, nove, doze) aceito, quem pediu tem que ganhar: se empatar de novo depois de uma vaza empatada, quem pediu perde.</li>
     <li>Truco vale 3, depois seis, nove e doze. Quem corre dá ao outro time o valor que estava valendo.</li>
     <li>Da segunda vaza em diante dá para jogar a carta coberta (não vale nada).</li>
-    <li>Mão de onze: o time com 11 vê as cartas do parceiro e decide se joga (vale 3) ou corre (dá 1). Sem truco.</li>
-    <li>Mão de ferro (11 a 11): mão normal, cada um vê só as próprias cartas (ninguém vê as do parceiro). Vale 1, sem truco: quem ganhar fecha a partida.</li>
+    <li>Mão de onze: o time com 11 decide se joga (vale 3) ou corre (o outro time ganha 1). No 2x2 e no 3x3 dá para ver as cartas do parceiro antes. Sem truco, seis, nove ou doze.</li>
+    <li>Mão de ferro (11 a 11): mão normal, cada um vê só as próprias cartas (ninguém vê as do parceiro). Vale 1, sem truco, seis, nove ou doze.</li>
     <li>Partida até 12 tentos. Cada partida vale o valor da mesa ($ 1 a $ 100). Times se alternam nas cadeiras: 1, 3, 5 contra 2, 4, 6.</li>
   </ul></details>`;
 }
@@ -1556,6 +1591,7 @@ function render() {
     return `<div class="played ${p.seat === winSeat ? 'win' : ''} ${old && st.phase === 'play' ? 'old' : ''}" style="left:${q.x}%;top:${q.y}%">${p.covered ? '<span class="card covered"></span>' : cardHtml(p.card, h.vira)}</div>`;
   }).join('');
   const viraHtml = `<div class="score vira-tile"><h3>Vira</h3><div class="row" style="gap:8px;flex-wrap:nowrap">${cardHtml(h.vira, null)}<span class="vlbl">manilha<br><b class="mrk">${manilhaRank(h.vira)}</b></span></div></div>`;
+  const lastTrick = plays.length && old && st.phase === 'play' ? '<div class="last-trick">vaza anterior</div>' : '';
   const banner = st.phase === 'truco' ? `<div class="banner">${RAISE_NAME[h.pending.to]}!</div>` : '';
 
   // minha mão
@@ -1622,7 +1658,7 @@ function render() {
         <div class="score"><h3>Vazas</h3><div class="pips" style="margin-top:8px">${pips}</div></div>
         ${viraHtml}
       </div>
-      <div class="mesa ${st.n === 6 ? 'six' : ''}">${seatsHtml}${playedHtml}${banner}
+      <div class="mesa ${st.n === 6 ? 'six' : ''}">${seatsHtml}${playedHtml}${lastTrick}${banner}
         ${seated ? (() => { const p = pos(me, [40, 40]); return `<div class="seat us me ${me === actor ? 'turn' : ''}" style="left:${p.x}%;top:${Math.min(p.y, 90)}%">${avatarHtml(st.seats[me], nick(st, me))}<span class="name">${esc(nick(st, me))} (você)</span></div>`; })() : ''}
       </div>
       <div class="actions"><p class="msg">${!solo && currentActor(st) >= 0 && st.turnAt ? `<span id="clock" class="clock ${timeLeft(st) <= 5 ? 'low' : ''}">${timeLeft(st)}s</span> ` : ''}${msg}</p><div class="row" style="justify-content:center">${btns}</div></div>
