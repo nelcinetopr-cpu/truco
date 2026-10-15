@@ -35,6 +35,7 @@
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; } /* o site fora do claude.ai não tem esse reset */
 html, body { min-height: 100%; }
 body {
   margin: 0;
@@ -291,6 +292,8 @@ ul.paid { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 4px; }
 @media (prefers-reduced-motion: no-preference) { .pay-shout { animation: shout .45s ease-out; } }
 @keyframes shout { from { transform: rotate(-3deg) scale(.4); opacity: 0; } }
 .seg { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 4px; border-radius: 12px; background: var(--felt-deep); border: 1px solid var(--line); }
+.seg.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.form-error { flex: 1 1 100%; margin: 0; padding: 10px 12px; border-radius: 10px; background: #4a1712; border: 1px solid var(--red); color: #ffd9d2; font-weight: 600; }
 .seg button { padding: 8px 4px; font-size: 13px; border: 0; background: transparent; color: var(--muted); border-radius: 8px; line-height: 1.2; }
 .seg button[aria-selected="true"] { background: var(--brass); color: #2a1a05; }
 .seg button:hover:not([aria-selected="true"]) { background: #164a37; color: var(--text); }
@@ -770,14 +773,19 @@ function showLobby() {
   const chipOpts = CHIP_VALUES.map(v => `<option value="${v}" ${v === 5 ? 'selected' : ''}>$ ${v}</option>`).join('');
   const accountPanel = account ? '' : `
       <section class="panel">
-        <h2>Entrar</h2>
-        <p class="muted">Use um nome de usuário e uma senha de 4 números. Suas vitórias e fichas ficam guardadas nele para o ranking.</p>
-        <form id="loginForm" class="row">
+        <h2 id="lgTitle">Entrar</h2>
+        <div class="seg two" role="tablist" aria-label="Entrar ou criar conta">
+          <button type="button" role="tab" data-lgmode="in" aria-selected="true">Já tenho conta</button>
+          <button type="button" role="tab" data-lgmode="new" aria-selected="false">Criar conta nova</button>
+        </div>
+        <p class="muted" id="lgHelp">Entre com seu usuário e sua senha de 4 números.</p>
+        <form id="loginForm" class="row" novalidate>
           <label style="flex:2 1 160px">Usuário<input id="lgName" maxlength="16" autocomplete="username" placeholder="Ex.: Rob"></label>
-          <label style="flex:1 1 100px">Senha (4 números)<input id="lgPin" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="current-password" placeholder="••••"></label>
+          <label style="flex:1 1 100px">Senha (4 números)<input id="lgPin" type="password" inputmode="numeric" maxlength="4" autocomplete="current-password" placeholder="••••"></label>
+          <label style="flex:1 1 100px" id="lgPin2Wrap" hidden>Repita a senha<input id="lgPin2" type="password" inputmode="numeric" maxlength="4" autocomplete="new-password" placeholder="••••"></label>
+          <p id="lgError" class="form-error" role="alert" hidden></p>
           <div class="row" style="flex:1 1 100%">
             <button class="primary" type="submit" id="lgEnter">Entrar</button>
-            <button type="button" id="lgCreate">Criar conta</button>
           </div>
         </form>
       </section>`;
@@ -831,8 +839,9 @@ function showLobby() {
   if (lo) lo.onclick = logout;
   const lf = document.getElementById('loginForm');
   if (lf) {
-    lf.onsubmit = e => { e.preventDefault(); login(false); };
-    document.getElementById('lgCreate').onclick = () => login(true);
+    lf.onsubmit = e => { e.preventDefault(); login(loginMode === 'new'); };
+    document.querySelectorAll('[data-lgmode]').forEach(b => (b.onclick = () => setLoginMode(b.dataset.lgmode)));
+    setLoginMode(loginMode);
   }
   document.getElementById('create').onclick = createTable;
   document.getElementById('join').onclick = () => { const c = document.getElementById('joinCode').value.trim().toUpperCase(); if (c) openTable(c); };
@@ -877,12 +886,36 @@ function saveAccount() {
   const store = localMode ? sessionStorage : localStorage;
   try { account ? store.setItem('truco:conta', JSON.stringify(account)) : store.removeItem('truco:conta'); } catch {}
 }
+// Tela de login: "Já tenho conta" e "Criar conta nova" ficam separados, e o erro aparece fixo embaixo do formulário.
+let loginMode = 'in';
+function setLoginMode(mode) {
+  loginMode = mode;
+  const isNew = mode === 'new';
+  document.querySelectorAll('[data-lgmode]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.lgmode === mode)));
+  document.getElementById('lgTitle').textContent = isNew ? 'Criar conta' : 'Entrar';
+  document.getElementById('lgHelp').textContent = isNew
+    ? 'Escolha um nome de usuário e uma senha de 4 números. Suas vitórias e fichas ficam guardadas nele para o ranking.'
+    : 'Entre com seu usuário e sua senha de 4 números.';
+  document.getElementById('lgPin2Wrap').hidden = !isNew;
+  document.getElementById('lgPin').autocomplete = isNew ? 'new-password' : 'current-password';
+  document.getElementById('lgEnter').textContent = isNew ? 'Criar conta' : 'Entrar';
+  loginError('');
+}
+function loginError(msg) {
+  const el = document.getElementById('lgError');
+  if (!el) { if (msg) toast(msg); return; }
+  el.textContent = msg; el.hidden = !msg;
+}
 async function login(create) {
   const name = document.getElementById('lgName').value.trim().replace(/\s+/g, ' ');
   const pin = document.getElementById('lgPin').value.trim();
   const key = userKey(name);
-  if (key.length < 3) return toast('O usuário precisa ter pelo menos 3 letras ou números.');
-  if (!/^\d{4}$/.test(pin)) return toast('A senha tem que ter exatamente 4 números.');
+  if (key.length < 3) return loginError('O usuário precisa ter pelo menos 3 letras ou números.');
+  if (!/^\d{4}$/.test(pin)) return loginError('A senha tem que ter exatamente 4 números.');
+  if (create && document.getElementById('lgPin2').value.trim() !== pin) return loginError('As duas senhas não são iguais.');
+  loginError('');
+  const btn = document.getElementById('lgEnter'); btn.disabled = true; btn.textContent = create ? 'Criando…' : 'Entrando…';
+  const done = () => { btn.disabled = false; btn.textContent = create ? 'Criar conta' : 'Entrar'; };
   try {
     const shown = create ? await authApi.create(key, name, pin) : await authApi.signIn(key, pin);
     if (create) toast(`Conta ${name} criada.`);
@@ -890,14 +923,17 @@ async function login(create) {
     myId = key; myNick = shown;
     saveAccount();
     startPayments();
+    loginMode = 'in';
     showLobby();
   } catch (e) {
-    toast(AUTH_MSG[e && e.code] || AUTH_MSG.unavailable);
+    done();
+    loginError(AUTH_MSG[e && e.code] || AUTH_MSG.unavailable);
   }
 }
 function logout() {
   authApi.signOut();
   account = null; myId = null; myNick = '';
+  loginMode = 'in';
   stopPayments();
   saveAccount();
   showLobby();
