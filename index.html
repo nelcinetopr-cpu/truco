@@ -1591,7 +1591,7 @@ function render() {
     return `<div class="played ${p.seat === winSeat ? 'win' : ''} ${old && st.phase === 'play' ? 'old' : ''}" style="left:${q.x}%;top:${q.y}%">${p.covered ? '<span class="card covered"></span>' : cardHtml(p.card, h.vira)}</div>`;
   }).join('');
   const viraHtml = `<div class="score vira-tile"><h3>Vira</h3><div class="row" style="gap:8px;flex-wrap:nowrap">${cardHtml(h.vira, null)}<span class="vlbl">manilha<br><b class="mrk">${manilhaRank(h.vira)}</b></span></div></div>`;
-  const lastTrick = plays.length && old && st.phase === 'play' ? '<div class="last-trick">vaza anterior</div>' : '';
+  const lastTrick = plays.length && old && st.phase === 'play' ? '<div class="last-trick">mão anterior</div>' : '';
   const banner = st.phase === 'truco' ? `<div class="banner">${RAISE_NAME[h.pending.to]}!</div>` : '';
 
   // minha mão
