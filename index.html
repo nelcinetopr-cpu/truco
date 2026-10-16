@@ -770,10 +770,10 @@ if (account) { myId = account.key; myNick = account.name; }
 
 const $app = document.getElementById('app');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
-function toast(msg) {
+function toast(msg, ms = 3200) {
   const t = document.getElementById('toast');
   t.textContent = msg; t.hidden = false;
-  clearTimeout(toast.t); toast.t = setTimeout(() => (t.hidden = true), 3200);
+  clearTimeout(toast.t); toast.t = setTimeout(() => (t.hidden = true), ms);
 }
 function setNotice(html) { const n = document.getElementById('notice'); n.innerHTML = html || ''; n.hidden = !html; }
 
@@ -1690,8 +1690,18 @@ let micStream = null, micTrack = null, pttDown = false, pttPressedAt = 0, micRel
 const vozId = (...parts) => [vz.code, ...parts].join('-');
 function writeVoz(id, body) { return db.collection('voz').doc(id).set({ table: vz.code, from: myId, at: Date.now(), ...body }).catch(() => {}); }
 
+const MIC_IDLE_MS = 10 * 60 * 1000;
+let micIdleTimer = null;
+function releaseMic() {
+  clearTimeout(micIdleTimer); micIdleTimer = null;
+  if (vz) return;
+  if (micStream) micStream.getTracks().forEach(t => t.stop());
+  micStream = micTrack = null;
+}
+addEventListener('pagehide', () => { if (micStream) micStream.getTracks().forEach(t => t.stop()); });
 function startVoice(c) {
   stopVoice();
+  clearTimeout(micIdleTimer);
   if (!voiceOK() || solo || !db || !account || mySeat() < 0) return;
   const v = vz = { code: c, session: rid(), peers: {}, talking: {}, ice: [STUN] };
   getIceServers().then(list => {
@@ -1707,8 +1717,10 @@ function stopVoice() {
   const v = vz; vz = null;
   if (v.unsub) v.unsub();
   for (const k in v.peers) closePeer(v.peers[k]);
-  if (micStream) micStream.getTracks().forEach(t => t.stop());
-  micStream = micTrack = null;
+  // não solta o microfone na hora: assim a próxima partida não pede permissão de novo
+  if (micTrack) micTrack.enabled = false;
+  clearTimeout(micIdleTimer);
+  micIdleTimer = setTimeout(releaseMic, MIC_IDLE_MS);
   // apaga o que esta pessoa deixou no banco para a ligação
   db.collection('voz').where('table', '==', v.code).get().then(s => s.docs.forEach(d => { if (d.data().from === myId) db.collection('voz').doc(d.id).delete().catch(() => {}); })).catch(() => {});
 }
@@ -1801,12 +1813,27 @@ async function answerOffer(d) {
   } catch { p.state = 'falhou'; }
 }
 
+// como deixar o microfone sempre permitido, conforme o celular
+function micHelp(denied) {
+  const ua = navigator.userAgent, ios = /iPhone|iPad|iPod/.test(ua) || (/Mac/.test(ua) && navigator.maxTouchPoints > 1);
+  const start = denied ? 'O microfone está bloqueado.' : 'Para não perguntar sempre:';
+  if (ios && /CriOS/.test(ua)) return start + ' no Ajustes do iPhone, abra Chrome e ligue Microfone; no Chrome, toque em Permitir.';
+  if (ios) return start + ' toque em "aA" na barra do endereço › Configurações do Site › Microfone › Permitir.';
+  if (/Android/.test(ua)) return start + ' toque no cadeado ao lado do endereço › Permissões › Microfone › Permitir.';
+  return start + ' clique no cadeado ao lado do endereço e deixe o Microfone como Permitir.';
+}
 // segurar para falar
 async function ensureMic() {
-  if (micTrack) return true;
+  if (micTrack && micTrack.readyState === 'live') return true;
+  let before = null;
+  try { before = (await navigator.permissions.query({ name: 'microphone' })).state; } catch {}
   try {
     micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
-  } catch { toast('Libere o microfone para falar (nas permissões do navegador).'); return false; }
+  } catch { toast(micHelp(true), 9000); return false; }
+  if (before !== 'granted') {
+    let shown = false; try { shown = localStorage.getItem('truco.dicaMic') === '1'; localStorage.setItem('truco.dicaMic', '1'); } catch {}
+    if (!shown) setTimeout(() => toast(micHelp(false), 9000), 1500);
+  }
   micTrack = micStream.getAudioTracks()[0];
   micTrack.enabled = false;
   if (vz) for (const k in vz.peers) vz.peers[k].audio?.play().catch(() => {});
