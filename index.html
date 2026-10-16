@@ -273,6 +273,22 @@ body.in-game .partner { flex: none; }
   .chat-list { max-height: 38dvh; }
 }
 
+/* ---- torneios ---- */
+.tag.pos { color: #8fd9a8; } .tag.neg { color: var(--them); }
+.receipt { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 12px; align-items: start; padding: 10px; border-radius: 10px; background: var(--felt-deep); border: 1px solid var(--line); }
+.receipt img { width: 96px; height: 128px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); display: block; }
+.bracket { display: flex; gap: 14px; overflow-x: auto; padding-bottom: 6px; align-items: stretch; }
+.round { display: flex; flex-direction: column; justify-content: space-around; gap: 10px; min-width: 210px; flex: none; }
+.round h3 { text-align: center; }
+.match { display: grid; gap: 4px; padding: 8px; border-radius: 10px; background: var(--felt-deep); border: 1px solid var(--line); }
+.match.done { opacity: .85; }
+.match .side { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; padding: 4px 6px; border-radius: 6px; }
+.match .side span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.match .side b { font-variant-numeric: tabular-nums; }
+.match .side.win { background: #1b4c3a; color: var(--brass); font-weight: 800; }
+.champ { display: grid; gap: 4px; justify-items: center; text-align: center; padding: 14px; border-radius: 12px; border: 2px solid var(--brass); background: var(--felt-deep); }
+.champ b { font-family: var(--display); font-weight: 400; font-size: 24px; color: var(--brass); }
+
 /* cartas */
 .card {
   width: 70px; aspect-ratio: 5 / 7; background: var(--card); color: var(--ink); border-radius: 8px;
@@ -563,7 +579,7 @@ function mockDb() {
    então cada documento vai guardado como texto JSON no campo "j". Os campos usados
    em buscas e nas regras de segurança também ficam soltos no documento.
    ========================================================= */
-const TOP_FIELDS = ['updatedAt', 'aliveAt', 'closedAt', 'at', 'to', 'from', 'status', 'confirmedAt', 'uid', 'name', 'table'];
+const TOP_FIELDS = ['updatedAt', 'aliveAt', 'closedAt', 'at', 'to', 'from', 'status', 'confirmedAt', 'uid', 'name', 'table', 'owner', 'orgs', 'p1', 'p2', 'torneio', 'createdAt'];
 const EMAIL_DOMAIN = 'truco.jogo';   // as contas do Firebase usam usuario@truco.jogo (nenhum e-mail é enviado)
 const pinPassword = pin => 'truco#' + pin; // o Firebase exige 6+ caracteres
 
@@ -602,6 +618,13 @@ function fsDb(fs) {
         return { acquired: true };
       }).catch(() => ({ acquired: false })),
       onSnapshot: (next, onErr) => ref.onSnapshot(s => next(wrapDoc(s)), e => onErr && onErr(e)),
+      // lê, muda e grava num passo só (o Firestore repete se outro jogador gravou junto)
+      transact: fn => fs.runTransaction(async tx => {
+        const s = await tx.get(ref);
+        const next = fn(s.exists ? dec(s.data()) : null);
+        if (next) tx.set(ref, enc(next));
+        return next;
+      }).catch(err),
       collection: sub => colRef(path + '/' + sub),
     };
   };
@@ -850,6 +873,7 @@ function botMove(s) {
 }
 
 function showLobby() {
+  closeTournament();
   document.body.classList.remove('in-game');
   stopChat();
   leaveSolo();
@@ -923,8 +947,10 @@ function showLobby() {
   // pagamentos ao lado do ranking e chave Pix logo acima das regras
   const rulesEl = $app.lastElementChild;
   rulesEl.insertAdjacentHTML('beforebegin', `<div class="grid2"><section class="panel" id="photoPanel"></section><section class="panel" id="pixPanel"></section></div>`);
+  document.getElementById('podium').parentElement.insertAdjacentHTML('beforebegin', `<div class="grid2"><section class="panel" id="tourPanel"></section><section class="panel" id="orgPanel"></section></div>`);
   document.getElementById('podium').parentElement.insertAdjacentHTML('afterend', `<div class="grid2"><section class="panel" id="payPanel"></section><section class="panel" id="profitPanel"></section></div>`);
-  renderPixPanel(); renderPayments(); renderProfit(); renderPhotoPanel();
+  renderPixPanel(); renderPayments(); renderProfit(); renderPhotoPanel(); renderTourPanel(); renderOrgPanel();
+  startTourneyLobby();
   document.getElementById('solo').onclick = () => startSolo(+document.getElementById('soloN').value);
   const lo = document.getElementById('logout');
   if (lo) lo.onclick = logout;
@@ -1171,6 +1197,7 @@ async function confirmPayment(id) {
 
 // Fim da partida: quem perdeu vê a tela grande com a chave de quem ganhou.
 function maybeShowPayOverlay(st) {
+  if (!st.stake) return;
   if (solo || st.phase !== 'gameEnd' || !account) return;
   const g = st.games[0]; if (!g) return;
   const key = st.code + '-' + g.n;
@@ -1338,6 +1365,7 @@ function renderProfit() {
 async function recordGame(st) {
   const g = st.games[0];
   if (!g) return;
+  if (st.torneio) advanceBracket(st);
   const winners = [], losers = [];
   st.seats.forEach((id, s) => { if (id) (team(s) === g.winner ? winners : losers).push(id); });
   const names = {};
@@ -1345,7 +1373,8 @@ async function recordGame(st) {
   try {
     await db.doc('partidas/' + st.code + '-' + g.n).set({ at: g.at, table: st.code, value: st.stake, winners, losers, names, score: g.score });
   } catch { toast('A partida acabou, mas não deu para registrar no ranking.'); }
-  // cada perdedor paga um vencedor, na ordem das cadeiras
+  // cada perdedor paga um vencedor, na ordem das cadeiras (partida de torneio não tem pagamento)
+  if (!st.stake) return;
   for (let i = 0; i < losers.length; i++) {
     const from = losers[i], to = winners[i % winners.length];
     try {
@@ -1762,6 +1791,458 @@ async function clearChat(c) {
   }
 }
 
+/* =========================================================
+   TORNEIOS EM DUPLAS
+   - Organização: o primeiro a "assumir" vira dono; o dono escolhe os organizadores.
+   - Organizador cria o torneio (vagas até 32 duplas, valor por jogador, Pix, prêmio).
+   - Um jogador inscreve a dupla e convida o parceiro; cada um envia o comprovante.
+   - A organização confere o comprovante e aprova. Dupla confirmada = convite aceito + 2 pagamentos aprovados.
+   - Ao fechar as inscrições: sorteio, chave eliminatória, cada confronto em melhor de 3.
+   ========================================================= */
+const MAX_DUPLAS = 32;
+let orgCfg = null, unsubOrg = null, unsubTours = null, toursList = [], myInvites = [], unsubInvites = null;
+let tour = null; // tela do torneio aberta: { id, t, chave, insc: [], comps: [], myComp, unsubs: [] }
+
+const isOwner = () => !!(orgCfg && account && orgCfg.owner === myId);
+const isOrg = () => !!(orgCfg && account && (orgCfg.owner === myId || (orgCfg.orgs || []).includes(myId)));
+
+// lê-modifica-grava de uma vez só (no Firebase é transação; no teste local é get+set)
+async function transact(path, fn) {
+  const ref = db.doc(path);
+  if (ref.transact) return ref.transact(fn);
+  const s = await ref.get();
+  const next = fn(s.exists ? structuredClone(s.data()) : null);
+  if (next) await ref.set(next);
+  return next;
+}
+
+// ---- assinaturas do saguão ----
+function startTourneyLobby() {
+  stopTourneyLobby();
+  if (!db) return;
+  unsubOrg = db.doc('config/org').onSnapshot(s => { orgCfg = s.exists ? s.data() : null; renderOrgPanel(); renderTourPanel(); }, () => {});
+  unsubTours = db.collection('torneios').orderBy('createdAt', 'desc').limit(30).onSnapshot(s => { toursList = s.docs.map(d => ({ id: d.id, ...d.data() })); renderTourPanel(); }, () => {});
+  if (account) unsubInvites = db.collection('inscricoes').where('p2', '==', myId).onSnapshot(s => { myInvites = s.docs.map(d => ({ id: d.id, ...d.data() })).filter(x => x.status === 'convite'); renderTourPanel(); }, () => {});
+}
+function stopTourneyLobby() {
+  [unsubOrg, unsubTours, unsubInvites].forEach(u => u && u());
+  unsubOrg = unsubTours = unsubInvites = null;
+}
+
+// ---- painel: Organização ----
+function renderOrgPanel() {
+  const el = document.getElementById('orgPanel');
+  if (!el) return;
+  if (!db || !account) { el.innerHTML = '<h2>Organização</h2><p class="muted">Entre com seu usuário para ver quem organiza os torneios.</p>'; return; }
+  if (!orgCfg) {
+    el.innerHTML = `<h2>Organização</h2><p class="muted">Ainda não tem dono. Quem assumir primeiro vira o dono e escolhe os organizadores dos torneios.</p>
+      <div class="row"><button class="primary" id="orgClaim">Assumir como dono</button></div>`;
+    document.getElementById('orgClaim').onclick = async () => {
+      try {
+        const ok = await transact('config/org', cur0 => (cur0 ? null : { owner: myId, orgs: [], names: { [myId]: myNick }, updatedAt: Date.now() }));
+        toast(ok ? 'Agora você é o dono da organização.' : 'Alguém já assumiu.');
+      } catch { toast('Não deu para assumir agora.'); }
+    };
+    return;
+  }
+  const nm = k => esc((orgCfg.names && orgCfg.names[k]) || k);
+  const list = (orgCfg.orgs || []).map(k => `<div class="seat-row"><span>${nm(k)}</span>${isOwner() ? `<button class="small danger" data-orgdel="${esc(k)}">Tirar</button>` : ''}</div>`).join('');
+  el.innerHTML = `<h2>Organização</h2>
+    <p><span class="muted">Dono:</span> <b class="team0">${nm(orgCfg.owner)}</b>${orgCfg.owner === myId ? ' <span class="muted">(você)</span>' : ''}</p>
+    <h3>Organizadores</h3>
+    <div class="seats-lobby">${list || '<p class="muted">Só o dono, por enquanto.</p>'}</div>
+    ${isOwner() ? `<form class="row" id="orgAdd"><input id="orgUser" maxlength="16" placeholder="Usuário do novo organizador" style="flex:1 1 160px" aria-label="Usuário do novo organizador"><button class="small primary" type="submit">Adicionar</button></form>` : ''}`;
+  el.querySelectorAll('[data-orgdel]').forEach(b => (b.onclick = () => transact('config/org', c => c && c.owner === myId ? { ...c, orgs: (c.orgs || []).filter(k => k !== b.dataset.orgdel), updatedAt: Date.now() } : null).catch(() => toast('Não deu para tirar.'))));
+  const f = document.getElementById('orgAdd');
+  if (f) f.onsubmit = async e => {
+    e.preventDefault();
+    const key = userKey(document.getElementById('orgUser').value);
+    if (key.length < 3) return toast('Digite o usuário.');
+    const acc = await db.doc('contas/' + key).get().catch(() => null);
+    if (!acc || !acc.exists) return toast('Esse usuário não existe.');
+    await transact('config/org', c => c && c.owner === myId ? { ...c, orgs: [...new Set([...(c.orgs || []), key])], names: { ...(c.names || {}), [key]: acc.data().name || key }, updatedAt: Date.now() } : null)
+      .then(() => toast('Organizador adicionado.'), () => toast('Não deu para adicionar.'));
+  };
+}
+
+// ---- painel: Torneios (lista + convites + criar) ----
+const TOUR_STATUS = { inscricoes: 'Inscrições abertas', andamento: 'Em andamento', encerrado: 'Encerrado' };
+function renderTourPanel() {
+  const el = document.getElementById('tourPanel');
+  if (!el) return;
+  if (!db) { el.innerHTML = '<h2>Torneios</h2><p class="muted">Sem conexão com o banco de dados.</p>'; return; }
+  const inv = myInvites.map(i => `<div class="pay-row"><div><b class="team0">${esc(i.names?.[i.p1] || i.p1)}</b> te chamou para fazer dupla no torneio <b>${esc(i.tname || '')}</b></div>
+      <div class="row"><button class="small primary" data-invok="${esc(i.id)}">Aceitar</button><button class="small danger" data-invno="${esc(i.id)}">Recusar</button></div></div>`).join('');
+  const items = toursList.map(t => `<div class="mesa-item"><div><b>${esc(t.nome)}</b> <span class="tag">${esc(TOUR_STATUS[t.status] || t.status)}</span>
+      <div class="muted" style="font-size:13px">$ ${esc(t.fee)} por jogador · até ${esc(t.maxDuplas)} duplas · melhor de 3</div></div>
+      <button class="small" data-tour="${esc(t.id)}">Abrir</button></div>`).join('');
+  el.innerHTML = `<h2>Torneios</h2>
+    ${inv ? `<h3>Convites para você</h3>${inv}` : ''}
+    <div class="mesas-list">${items || '<p class="muted">Nenhum torneio ainda.</p>'}</div>
+    ${isOrg() ? '<div class="row"><button class="primary" id="tourNew">Criar torneio</button></div>' : ''}`;
+  el.querySelectorAll('[data-tour]').forEach(b => (b.onclick = () => openTournament(b.dataset.tour)));
+  el.querySelectorAll('[data-invok]').forEach(b => (b.onclick = () => answerInvite(b.dataset.invok, true)));
+  el.querySelectorAll('[data-invno]').forEach(b => (b.onclick = () => answerInvite(b.dataset.invno, false)));
+  const nb = document.getElementById('tourNew'); if (nb) nb.onclick = showCreateTournament;
+}
+
+function showCreateTournament() {
+  stopLobbySubs();
+  document.getElementById('topRight').innerHTML = '';
+  $app.innerHTML = `<section class="panel" style="max-width:640px">
+    <h2>Criar torneio</h2>
+    <form id="tourForm" class="row" novalidate>
+      <label style="flex:1 1 100%">Nome do torneio<input id="tNome" maxlength="40" placeholder="Ex.: Copa do Zap"></label>
+      <label style="flex:1 1 140px">Valor por jogador ($)<input id="tFee" type="number" min="0" max="10000" value="10"></label>
+      <label style="flex:1 1 140px">Máximo de duplas (2 a 32)<input id="tMax" type="number" min="2" max="32" value="8"></label>
+      <label style="flex:1 1 140px">Prêmio 1º lugar (%)<input id="tP1" type="number" min="0" max="100" value="70"></label>
+      <label style="flex:1 1 140px">Prêmio 2º lugar (%)<input id="tP2" type="number" min="0" max="100" value="30"></label>
+      <h3 style="flex:1 1 100%">Conta para o pagamento das inscrições (Pix)</h3>
+      <label style="flex:2 1 200px">Nome (titular)<input id="tPixNome" maxlength="60"></label>
+      <label style="flex:3 1 100%">Chave aleatória<input id="tPixChave" maxlength="36" placeholder="1a2b3c4d-1a2b-1a2b-1a2b-1a2b3c4d5e6f" autocomplete="off" spellcheck="false"></label>
+      <p id="tErr" class="form-error" hidden></p>
+      <div class="row" style="flex:1 1 100%"><button class="primary" type="submit">Criar torneio</button><button type="button" id="tCancel">Cancelar</button></div>
+    </form>
+    <p class="muted" style="font-size:13px">Todas as partidas são em duplas (2x2), melhor de 3. O sorteio dos confrontos acontece quando você fechar as inscrições.</p>
+  </section>`;
+  document.getElementById('tCancel').onclick = showLobby;
+  document.getElementById('tourForm').onsubmit = async e => {
+    e.preventDefault();
+    const err = m => { const x = document.getElementById('tErr'); x.textContent = m; x.hidden = !m; };
+    const nome = document.getElementById('tNome').value.trim();
+    const fee = Math.round(+document.getElementById('tFee').value);
+    const maxDuplas = Math.round(+document.getElementById('tMax').value);
+    const p1 = Math.round(+document.getElementById('tP1').value), p2 = Math.round(+document.getElementById('tP2').value);
+    const pixNome = document.getElementById('tPixNome').value.trim();
+    const pixChave = document.getElementById('tPixChave').value.trim().toLowerCase();
+    if (!nome) return err('Dê um nome ao torneio.');
+    if (!(fee >= 0)) return err('Valor por jogador inválido.');
+    if (!(maxDuplas >= 2 && maxDuplas <= MAX_DUPLAS)) return err('O máximo de duplas vai de 2 a 32.');
+    if (p1 + p2 !== 100 || p1 < 0 || p2 < 0) return err('As porcentagens do 1º e do 2º lugar precisam somar 100%.');
+    if (fee > 0 && (!pixNome || !PIX_RANDOM.test(pixChave))) return err('Preencha o titular e uma chave Pix aleatória válida.');
+    const id = 'T' + rid();
+    try {
+      await db.doc('torneios/' + id).set({ nome, fee, maxDuplas, premio: [p1, p2], pixNome, pixChave, status: 'inscricoes', owner: myId, createdAt: Date.now(), updatedAt: Date.now() });
+      openTournament(id);
+    } catch { err('Não deu para criar. Confira se você é organizador.'); }
+  };
+}
+
+function stopLobbySubs() {
+  stopTourneyLobby();
+  if (unsubList) { unsubList(); unsubList = null; }
+  if (unsubRank) { unsubRank(); unsubRank = null; }
+}
+
+// ---- inscrição em dupla ----
+async function signUpDuo(tid, partnerName) {
+  const t = tour && tour.t; if (!t) return;
+  const key = userKey(partnerName || '');
+  if (key.length < 3) return toast('Digite o usuário do seu parceiro.');
+  if (key === myId) return toast('O parceiro tem que ser outra pessoa.');
+  if (tour.insc.some(i => i.status !== 'recusado' && (i.p1 === myId || i.p2 === myId))) return toast('Você já está numa dupla deste torneio.');
+  if (tour.insc.some(i => i.status !== 'recusado' && (i.p1 === key || i.p2 === key))) return toast('Seu parceiro já está em outra dupla.');
+  if (tour.insc.filter(i => i.status !== 'recusado').length >= t.maxDuplas) return toast('As vagas acabaram.');
+  const acc = await db.doc('contas/' + key).get().catch(() => null);
+  if (!acc || !acc.exists) return toast('Esse usuário não existe.');
+  try {
+    await db.doc('inscricoes/' + tid + '-' + myId).set({ torneio: tid, tname: t.nome, p1: myId, p2: key, names: { [myId]: myNick, [key]: acc.data().name || key },
+      status: 'convite', pay: { [myId]: 'nao', [key]: 'nao' }, at: Date.now(), updatedAt: Date.now() });
+    toast('Dupla inscrita. Agora seu parceiro precisa aceitar o convite.');
+  } catch { toast('Não deu para inscrever.'); }
+}
+async function answerInvite(id, yes) {
+  try {
+    await transact('inscricoes/' + id, i => (i && i.p2 === myId && i.status === 'convite' ? { ...i, status: yes ? 'aceito' : 'recusado', updatedAt: Date.now() } : null));
+    toast(yes ? 'Convite aceito. Falta mandar o comprovante.' : 'Convite recusado.');
+  } catch { toast('Não deu para responder.'); }
+}
+const duoConfirmed = i => i.status === 'aceito' && i.pay && i.pay[i.p1] === 'aprovado' && i.pay[i.p2] === 'aprovado';
+function duoState(i) {
+  if (i.status === 'recusado') return ['Recusada', 'neg'];
+  if (i.status === 'convite') return ['Esperando o parceiro aceitar', ''];
+  if (duoConfirmed(i)) return ['Confirmada', 'pos'];
+  return ['Esperando pagamento', ''];
+}
+
+// ---- comprovante: guarda a imagem até a organização validar ----
+function shrinkReceipt(file, maxBytes = 230 * 1024) {
+  return new Promise((resolve, reject) => {
+    if (!file || !/^image\//.test(file.type)) return reject(new Error('tipo'));
+    const url = URL.createObjectURL(file), im = new Image();
+    im.onload = () => {
+      let side = 1400, q = 0.72, out = '';
+      for (let k = 0; k < 8; k++) {
+        const s = Math.min(1, side / Math.max(im.naturalWidth, im.naturalHeight));
+        const c = document.createElement('canvas'); c.width = Math.round(im.naturalWidth * s); c.height = Math.round(im.naturalHeight * s);
+        c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+        out = c.toDataURL('image/jpeg', q);
+        if (out.length * 0.75 <= maxBytes) break;
+        side *= 0.82; q = Math.max(0.45, q - 0.06);
+      }
+      URL.revokeObjectURL(url); resolve(out);
+    };
+    im.onerror = () => { URL.revokeObjectURL(url); reject(new Error('leitura')); };
+    im.src = url;
+  });
+}
+async function sendReceipt(tid, file) {
+  const ins = tour.insc.find(i => i.status !== 'recusado' && (i.p1 === myId || i.p2 === myId));
+  if (!ins) return toast('Você não está inscrito.');
+  try {
+    const img = await shrinkReceipt(file);
+    await db.doc('comprovantes/' + tid + '-' + myId).set({ torneio: tid, from: myId, name: myNick, insc: ins.id, img, status: 'pendente', at: Date.now() });
+    await transact('inscricoes/' + ins.id, i => (i ? { ...i, pay: { ...(i.pay || {}), [myId]: 'pendente' }, updatedAt: Date.now() } : null));
+    tour.myComp = { status: 'pendente' };
+    toast('Comprovante enviado. Aguarde a organização conferir.');
+    renderTournament();
+  } catch (e) { toast(e && e.message === 'tipo' ? 'Escolha uma imagem (print ou foto do comprovante).' : 'Não deu para enviar o comprovante.'); }
+}
+async function judgeReceipt(c, ok) {
+  try {
+    await db.doc('comprovantes/' + c.id).update({ status: ok ? 'aprovado' : 'recusado', confirmedAt: Date.now() });
+    await transact('inscricoes/' + c.insc, i => (i ? { ...i, pay: { ...(i.pay || {}), [c.from]: ok ? 'aprovado' : 'recusado' }, updatedAt: Date.now() } : null));
+    toast(ok ? 'Pagamento aprovado.' : 'Comprovante recusado.');
+  } catch { toast('Não deu para salvar.'); }
+}
+
+// ---- tela do torneio ----
+function openTournament(id) {
+  closeTournament();
+  stopLobbySubs();
+  document.body.classList.remove('in-game');
+  if (location.hash) history.replaceState(null, '', location.pathname + location.search);
+  document.getElementById('topRight').innerHTML = '';
+  tour = { id, t: null, chave: null, insc: [], comps: [], myComp: null, unsubs: [] };
+  $app.innerHTML = '<p class="muted">Abrindo o torneio…</p>';
+  const u = tour.unsubs;
+  u.push(db.doc('torneios/' + id).onSnapshot(s => { if (!tour) return; tour.t = s.exists ? s.data() : null; renderTournament(); }, () => {}));
+  u.push(db.doc('chaves/' + id).onSnapshot(s => { if (!tour) return; tour.chave = s.exists ? s.data() : null; renderTournament(); }, () => {}));
+  u.push(db.collection('inscricoes').where('torneio', '==', id).onSnapshot(s => { if (!tour) return; tour.insc = s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => a.at - b.at); renderTournament(); }, () => {}));
+  // organização vê todos os comprovantes; cada jogador só o seu
+  const watchComps = () => {
+    if (isOrg()) u.push(db.collection('comprovantes').where('torneio', '==', id).onSnapshot(s => { if (!tour) return; tour.comps = s.docs.map(d => ({ id: d.id, ...d.data() })); renderTournament(); }, () => {}));
+  };
+  if (orgCfg) watchComps(); else db.doc('config/org').get().then(s => { orgCfg = s.exists ? s.data() : null; watchComps(); renderTournament(); }).catch(() => {});
+  if (account) db.doc('comprovantes/' + id + '-' + myId).get().then(s => { if (tour) { tour.myComp = s.exists ? s.data() : null; renderTournament(); } }).catch(() => {});
+}
+function closeTournament() {
+  if (!tour) return;
+  tour.unsubs.forEach(x => x && x());
+  tour = null;
+}
+
+const ROUND_NAMES = n => (n === 1 ? 'Final' : n === 2 ? 'Semifinal' : n === 4 ? 'Quartas' : n === 8 ? 'Oitavas' : '16 avos');
+function duoName(i) { return i ? `${(i.names && i.names[i.p1]) || i.p1} & ${(i.names && i.names[i.p2]) || i.p2}` : '—'; }
+
+function renderTournament() {
+  if (!tour) return;
+  const keepPartner = document.getElementById('duoPartner'), keepVal = keepPartner ? keepPartner.value : '', keepFocus = keepPartner && document.activeElement === keepPartner;
+  const t = tour.t;
+  if (!t) { $app.innerHTML = '<div class="panel"><p>Torneio não encontrado.</p><div class="row"><button id="tBack">Voltar ao saguão</button></div></div>'; document.getElementById('tBack').onclick = () => { closeTournament(); showLobby(); }; return; }
+  const live = tour.insc.filter(i => i.status !== 'recusado');
+  const confirmed = live.filter(duoConfirmed);
+  const mine = live.find(i => i.p1 === myId || i.p2 === myId);
+  const players = confirmed.length * 2;
+  const pot = players * t.fee;
+  const ch = tour.chave;
+  const byId = Object.fromEntries(tour.insc.map(i => [i.id, i]));
+
+  // minha inscrição
+  let me = '';
+  if (!account) me = '<p class="muted">Entre com seu usuário para se inscrever.</p>';
+  else if (mine) {
+    const [st, cls] = duoState(mine);
+    const partner = mine.p1 === myId ? mine.p2 : mine.p1;
+    const myPay = (mine.pay || {})[myId] || 'nao';
+    const payTxt = { nao: 'você ainda não mandou o comprovante', pendente: 'seu comprovante está com a organização', aprovado: 'seu pagamento foi aprovado', recusado: 'seu comprovante foi recusado: mande outro' }[myPay];
+    const partnerPay = { nao: 'não mandou', pendente: 'em análise', aprovado: 'aprovado', recusado: 'recusado' }[(mine.pay || {})[partner] || 'nao'];
+    me = `<p>Sua dupla: <b>${esc(duoName(mine))}</b> · <span class="${cls}">${esc(st)}</span></p>
+      ${mine.status === 'convite' && mine.p1 === myId ? '<p class="muted">Esperando seu parceiro aceitar o convite (aparece para ele no saguão, em Torneios).</p>' : ''}
+      ${mine.status === 'convite' && mine.p2 === myId ? `<div class="row"><button class="primary small" data-invok="${esc(mine.id)}">Aceitar convite</button><button class="danger small" data-invno="${esc(mine.id)}">Recusar</button></div>` : ''}
+      ${mine.status === 'aceito' ? `<p class="muted">Pagamento: ${esc(payTxt)}. Parceiro: ${esc(partnerPay)}.</p>
+        ${myPay !== 'aprovado' && t.fee > 0 ? `<label class="file-btn"><input type="file" id="rcFile" accept="image/*">${myPay === 'nao' ? 'Enviar comprovante' : 'Enviar outro comprovante'}</label>` : ''}` : ''}
+      ${t.status === 'inscricoes' && mine.p1 === myId ? `<div class="row"><button class="small danger" id="duoCancel">Cancelar inscrição</button></div>` : ''}`;
+  } else if (t.status === 'inscricoes') {
+    me = live.length >= t.maxDuplas ? '<p class="muted">As vagas acabaram.</p>' : `<form class="row" id="duoForm"><input id="duoPartner" maxlength="16" placeholder="Usuário do seu parceiro" style="flex:1 1 160px" aria-label="Usuário do seu parceiro"><button class="primary small" type="submit">Inscrever dupla</button></form>
+      <p class="muted" style="font-size:13px">Seu parceiro recebe um convite e precisa aceitar. Depois, cada um paga $ ${esc(t.fee)} e manda o comprovante.</p>`;
+  } else me = '<p class="muted">As inscrições estão fechadas.</p>';
+
+  // lista de duplas
+  const duoRows = live.map(i => { const [st, cls] = duoState(i); return `<div class="seat-row"><span>${esc(duoName(i))}</span><span class="tag ${cls}">${esc(st)}</span></div>`; }).join('');
+
+  // área da organização
+  let org = '';
+  if (isOrg()) {
+    const pend = tour.comps.filter(c => c.status === 'pendente');
+    org = `<section class="panel">
+      <h2>Organização</h2>
+      <h3>Comprovantes para conferir (${pend.length})</h3>
+      ${pend.length ? pend.map(c => `<div class="receipt">
+          <a href="#" data-zoom="${esc(c.id)}"><img src="${c.img}" alt="Comprovante de ${esc(c.name)}"></a>
+          <div><b>${esc(c.name)}</b> <span class="muted">· $ ${esc(t.fee)} · ${shortDate(c.at)}</span>
+            <p class="muted" style="font-size:13px">Confira no app do banco se o Pix caiu antes de aprovar.</p>
+            <div class="row"><button class="small primary" data-rok="${esc(c.id)}">Aprovar</button><button class="small danger" data-rno="${esc(c.id)}">Recusar</button></div></div>
+        </div>`).join('') : '<p class="muted">Nenhum comprovante esperando.</p>'}
+      ${t.status === 'inscricoes' ? `<div class="row"><button class="primary" id="tDraw" ${confirmed.length >= 2 ? '' : 'disabled'}>Fechar inscrições e sortear (${confirmed.length} duplas confirmadas)</button></div>
+        <p class="muted" style="font-size:13px">Só entram no sorteio as duplas confirmadas (convite aceito e os dois pagamentos aprovados).</p>` : ''}
+      <div class="row"><button class="small danger" id="tDelete">Excluir torneio</button></div>
+    </section>`;
+  }
+
+  // chave
+  let bracket = '';
+  if (ch && ch.rounds) {
+    const champ = ch.campeao && byId[ch.campeao], vice = ch.vice && byId[ch.vice];
+    const potF = ch.pot != null ? ch.pot : pot;
+    bracket = `<section class="panel">
+      <h2>Chave</h2>
+      ${champ ? `<div class="champ"><span>🏆 Campeões</span><b>${esc(duoName(champ))}</b>
+        <span class="muted">Prêmio: $ ${Math.round(potF * t.premio[0] / 100)} para a dupla campeã${t.premio[1] ? ` e $ ${Math.round(potF * t.premio[1] / 100)} para ${esc(duoName(vice))}` : ''}. A organização faz o pagamento.</span></div>` : ''}
+      <div class="bracket">${ch.rounds.map((round, r) => `<div class="round"><h3>${ROUND_NAMES(round.length)}</h3>${round.map((m, i) => {
+        const A = m.a === 'BYE' ? null : byId[m.a], B = m.b === 'BYE' ? null : byId[m.b];
+        const inMatch = A && B && !m.winner && [A.p1, A.p2, B.p1, B.p2].includes(myId);
+        return `<div class="match ${m.winner ? 'done' : ''}">
+          <div class="side ${m.winner && m.winner === m.a ? 'win' : ''}"><span>${A ? esc(duoName(A)) : m.a === 'BYE' ? '<i class="muted">folga</i>' : '<i class="muted">a definir</i>'}</span><b>${m.w[0]}</b></div>
+          <div class="side ${m.winner && m.winner === m.b ? 'win' : ''}"><span>${B ? esc(duoName(B)) : m.b === 'BYE' ? '<i class="muted">folga</i>' : '<i class="muted">a definir</i>'}</span><b>${m.w[1]}</b></div>
+          ${inMatch ? `<button class="small primary" data-play-match="${r}-${i}">${m.mesa ? 'Ir para a mesa' : `Abrir partida ${m.g + 1}`}</button>` : m.mesa && A && B && !m.winner ? `<button class="small" data-watch="${esc(m.mesa)}">Assistir</button>` : ''}
+        </div>`;
+      }).join('')}</div>`).join('')}</div>
+    </section>`;
+  }
+
+  $app.innerHTML = `
+    <div class="row" style="justify-content:space-between"><h2 style="font-size:26px">${esc(t.nome)} <span class="tag">${esc(TOUR_STATUS[ch && ch.campeao ? 'encerrado' : t.status] || t.status)}</span></h2><button id="tBack">Saguão</button></div>
+    <div class="grid2">
+      <section class="panel">
+        <h3>Como funciona</h3>
+        <p>Duplas (2x2), todas as partidas em <b>melhor de 3</b>, com sorteio dos confrontos. Até <b>${esc(t.maxDuplas)}</b> duplas.</p>
+        <p>Inscrição: <b>$ ${esc(t.fee)} por jogador</b>. Prêmio: <b>${esc(t.premio[0])}%</b> para a dupla campeã${t.premio[1] ? ` e <b>${esc(t.premio[1])}%</b> para a vice` : ''}${players ? ` (hoje: $ ${pot} arrecadados de ${players} jogadores confirmados)` : ''}.</p>
+        ${t.fee > 0 ? `<h3>Pague a inscrição neste Pix</h3><dl class="pix"><dt>Nome</dt><dd>${esc(t.pixNome)}</dd><dt>Tipo</dt><dd>Aleatória</dd><dt>Chave</dt><dd class="pix-key"><span class="key-text">${esc(t.pixChave)}</span><button type="button" class="small primary" data-copy="${esc(t.pixChave)}">Copiar</button></dd></dl>` : ''}
+      </section>
+      <section class="panel"><h2>Sua inscrição</h2>${me}</section>
+    </div>
+    ${bracket}
+    <div class="grid2">
+      <section class="panel"><h2>Duplas (${live.length}/${esc(t.maxDuplas)})</h2><div class="seats-lobby">${duoRows || '<p class="muted">Nenhuma dupla ainda.</p>'}</div></section>
+      ${org}
+    </div>`;
+
+  document.getElementById('tBack').onclick = () => { closeTournament(); showLobby(); };
+  { const dp = document.getElementById('duoPartner'); if (dp && keepVal) { dp.value = keepVal; if (keepFocus) dp.focus(); } }
+  const df = document.getElementById('duoForm'); if (df) df.onsubmit = e => { e.preventDefault(); signUpDuo(tour.id, document.getElementById('duoPartner').value); };
+  const dc = document.getElementById('duoCancel'); if (dc) dc.onclick = () => db.doc('inscricoes/' + mine.id).delete().then(() => toast('Inscrição cancelada.'), () => toast('Não deu para cancelar.'));
+  const rf = document.getElementById('rcFile'); if (rf) rf.onchange = e => { const f = e.target.files[0]; if (f) sendReceipt(tour.id, f); };
+  $app.querySelectorAll('[data-invok]').forEach(b => (b.onclick = () => answerInvite(b.dataset.invok, true)));
+  $app.querySelectorAll('[data-invno]').forEach(b => (b.onclick = () => answerInvite(b.dataset.invno, false)));
+  $app.querySelectorAll('[data-rok]').forEach(b => (b.onclick = () => judgeReceipt(tour.comps.find(c => c.id === b.dataset.rok), true)));
+  $app.querySelectorAll('[data-rno]').forEach(b => (b.onclick = () => judgeReceipt(tour.comps.find(c => c.id === b.dataset.rno), false)));
+  $app.querySelectorAll('[data-zoom]').forEach(a => (a.onclick = e => { e.preventDefault(); const c = tour.comps.find(x => x.id === a.dataset.zoom); if (c) zoomReceipt(c); }));
+  const dr = document.getElementById('tDraw'); if (dr) dr.onclick = () => drawBracket(confirmed, pot);
+  const del = document.getElementById('tDelete'); if (del) del.onclick = () => confirmInline(del, 'Excluir mesmo?', () => deleteTournament());
+  $app.querySelectorAll('[data-play-match]').forEach(b => (b.onclick = () => { const [r, i] = b.dataset.playMatch.split('-').map(Number); playMatch(r, i); }));
+  $app.querySelectorAll('[data-watch]').forEach(b => (b.onclick = () => { const id = tour.id; closeTournament(); openTable(b.dataset.watch); tourReturn = id; }));
+}
+
+// confirmação dentro da página (o navegador do claude.ai não mostra confirm())
+function confirmInline(btn, label, fn) {
+  if (btn.dataset.armed) return fn();
+  btn.dataset.armed = '1'; const old = btn.textContent; btn.textContent = label;
+  setTimeout(() => { if (btn.isConnected) { btn.textContent = old; delete btn.dataset.armed; } }, 3000);
+}
+function zoomReceipt(c) {
+  const ov = document.createElement('div'); ov.id = 'payOverlay';
+  ov.innerHTML = `<div class="pay-card"><img src="${c.img}" alt="Comprovante de ${esc(c.name)}" style="max-height:70dvh;width:auto;border-radius:8px"><button class="primary" id="zClose">Fechar</button></div>`;
+  document.body.appendChild(ov); document.getElementById('zClose').onclick = () => ov.remove(); ov.onclick = e => { if (e.target === ov) ov.remove(); };
+}
+async function deleteTournament() {
+  const id = tour.id;
+  try {
+    for (const col of ['inscricoes', 'comprovantes']) {
+      const s = await db.collection(col).where('torneio', '==', id).get();
+      for (const d of s.docs) await db.collection(col).doc(d.id).delete().catch(() => {});
+    }
+    await db.doc('chaves/' + id).delete().catch(() => {});
+    await db.doc('torneios/' + id).delete();
+    closeTournament(); showLobby(); toast('Torneio excluído.');
+  } catch { toast('Não deu para excluir.'); }
+}
+
+// ---- sorteio e chave ----
+function drawBracket(confirmed, pot) {
+  const ids = confirmed.map(i => i.id);
+  for (let k = ids.length - 1; k > 0; k--) { const j = randInt(k + 1); [ids[k], ids[j]] = [ids[j], ids[k]]; } // sorteio
+  let size = 2; while (size < ids.length) size *= 2;
+  // folgas (BYE) espalhadas: cada folga enfrenta uma dupla, nunca outra folga
+  const slots = [];
+  const byes = size - ids.length;
+  let b = 0;
+  for (let m = 0; m < size / 2; m++) { slots.push(ids.shift()); slots.push(b < byes ? (b++, 'BYE') : ids.shift()); }
+  const rounds = [];
+  rounds.push(Array.from({ length: size / 2 }, (_, i) => newMatch(slots[2 * i], slots[2 * i + 1])));
+  for (let n = size / 4; n >= 1; n /= 2) rounds.push(Array.from({ length: n }, () => newMatch(null, null)));
+  const chave = { rounds, pot, createdAt: Date.now(), updatedAt: Date.now() };
+  // folgas passam direto
+  rounds[0].forEach((m, i) => { if (m.b === 'BYE') { m.winner = m.a; m.w = [2, 0]; advance(chave, 0, i); } });
+  db.doc('chaves/' + tour.id).set(chave)
+    .then(() => db.doc('torneios/' + tour.id).update({ status: 'andamento', updatedAt: Date.now() }))
+    .then(() => toast('Sorteio feito! A chave está pronta.'), () => toast('Não deu para sortear.'));
+}
+function newMatch(a, b) { return { a, b, w: [0, 0], g: 0, winner: null, mesa: null }; }
+function advance(chave, r, i) {
+  const m = chave.rounds[r][i];
+  if (r === chave.rounds.length - 1) { chave.campeao = m.winner; chave.vice = m.winner === m.a ? m.b : m.a; return; }
+  const next = chave.rounds[r + 1][Math.floor(i / 2)];
+  if (i % 2 === 0) next.a = m.winner; else next.b = m.winner;
+}
+
+// abre (ou reabre) a mesa do jogo atual do confronto
+let tourReturn = null;
+async function playMatch(r, i) {
+  const tid = tour.id;
+  const byId = Object.fromEntries(tour.insc.map(x => [x.id, x]));
+  let codeToOpen = null;
+  try {
+    await transact('chaves/' + tid, ch => {
+      const m = ch && ch.rounds[r][i];
+      if (!m || m.winner) return null;
+      if (m.mesa) { codeToOpen = m.mesa; return null; }
+      codeToOpen = genCode(); m.mesa = codeToOpen; ch.updatedAt = Date.now();
+      return ch;
+    });
+    const ch = tour.chave, m = ch && ch.rounds[r][i];
+    const existing = await tableRef(codeToOpen).get().catch(() => null);
+    if (!existing || !existing.exists) {
+      const A = byId[m.a], B = byId[m.b];
+      const seats = [A.p1, B.p1, A.p2, B.p2]; // time 1 = dupla de cima, time 2 = dupla de baixo
+      const names = { ...A.names, ...B.names };
+      await tableRef(codeToOpen).set({
+        v: 1, code: codeToOpen, n: 4, stake: 0, owner: myId, createdAt: Date.now(), updatedAt: Date.now(),
+        seats, names, phase: 'lobby', score: [0, 0], dealer: 0, hand: null, result: null, games: [], balances: {}, gameNo: (m.g || 0), log: [],
+        torneio: { tid, r, i, g: m.g || 0, nome: tour.t.nome },
+      });
+    }
+    closeTournament(); tourReturn = tid; openTable(codeToOpen);
+  } catch { toast('Não deu para abrir a mesa.'); }
+}
+
+// fim de um jogo do torneio: soma a vitória na chave (melhor de 3)
+async function advanceBracket(st) {
+  const T = st.torneio, g = st.games[0];
+  if (!T || !g) return;
+  try {
+    await transact('chaves/' + T.tid, ch => {
+      const m = ch && ch.rounds[T.r] && ch.rounds[T.r][T.i];
+      if (!m || m.winner || (m.g || 0) !== T.g) return null; // já contado
+      m.w[g.winner === 0 ? 0 : 1]++;
+      m.g = (m.g || 0) + 1; m.mesa = null;
+      if (m.w[0] >= 2 || m.w[1] >= 2) { m.winner = m.w[0] >= 2 ? m.a : m.b; advance(ch, T.r, T.i); }
+      ch.updatedAt = Date.now();
+      return ch;
+    });
+  } catch {}
+}
+
 function genCode() { const A = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; let s = ''; for (let i = 0; i < 5; i++) s += A[randInt(A.length)]; return s; }
 
 async function createTable() {
@@ -1784,6 +2265,8 @@ async function createTable() {
    ========================================================= */
 function openTable(c) {
   if (!db) return;
+  stopTourneyLobby();
+  closeTournament();
   if (unsubList) { unsubList(); unsubList = null; }
   if (unsubRank) { unsubRank(); unsubRank = null; }
   if (unsubTable) unsubTable();
@@ -2016,9 +2499,11 @@ function render() {
     const g = st.games[0];
     const win = g.winner;
     msg = `<strong>${seated ? (win === us ? 'Vocês ganharam' : 'Vocês perderam') : teamLabel(win) + ' ganhou'}</strong> a partida ${g.n}, ${Math.min(st.score[win], 12)} a ${st.score[1 - win]}.`;
-    if (seated && g.delta[myId] !== undefined) msg += ` Seu saldo nessa partida: <strong>${fmt(g.delta[myId])}</strong>.`;
-    if (!solo && seated && win === us) msg += ' Confirme em Pagamentos quando o Pix cair.';
+    if (st.torneio) msg = `<strong>${seated ? (win === us ? 'Vocês ganharam' : 'Vocês perderam') : teamLabel(win) + ' ganhou'}</strong> o jogo ${(st.torneio.g || 0) + 1} do confronto, ${Math.min(st.score[win], 12)} a ${st.score[1 - win]}.`;
+    if (!st.torneio && seated && g.delta[myId] !== undefined) msg += ` Seu saldo nessa partida: <strong>${fmt(g.delta[myId])}</strong>.`;
+    if (!solo && !st.torneio && seated && win === us) msg += ' Confirme em Pagamentos quando o Pix cair.';
     if (solo) btns = `<button class="primary" data-act="newGame">Nova partida</button>`;
+    else if (st.torneio) { msg += ' Placar atualizado na chave do torneio.'; btns = `<button class="primary" data-act="tour">Voltar ao torneio</button>`; }
     else { msg += ' Mesa encerrada.'; btns = `<button class="primary" data-act="lobby">Voltar ao saguão</button>`; }
   }
   if (!seated) msg = '<span class="muted">Você está assistindo.</span> ' + msg;
@@ -2059,7 +2544,7 @@ function render() {
     commit(s => { if (s.phase !== 'play' || s.hand.turn !== me) return false; playCard(s, me, i, c && s.hand.rw.length >= 1); });
   }));
   const cv = document.getElementById('cover'); if (cv) cv.onclick = () => { cover = !cover; render(); };
-  $app.querySelectorAll('[data-act]').forEach(b => (b.onclick = () => (b.dataset.act === 'lobby' ? showLobby() : act(b.dataset.act))));
+  $app.querySelectorAll('[data-act]').forEach(b => (b.onclick = () => (b.dataset.act === 'lobby' ? showLobby() : b.dataset.act === 'tour' ? openTournament(cur.torneio.tid) : act(b.dataset.act))));
 }
 
 function act(a, me = mySeat()) {
@@ -2128,7 +2613,7 @@ function renderSeating(st, me) {
     <div class="grid2">
       <section class="panel">
         <h2>Mesa <span class="code">${esc(st.code)}</span></h2>
-        <p class="muted">Mande o código para a turma. ${modeLabel(st.n)}, cada partida vale $ ${esc(st.stake)}.</p>
+        <p class="muted">${st.torneio ? `Jogo ${(st.torneio.g || 0) + 1} do torneio <b>${esc(st.torneio.nome || '')}</b> (melhor de 3). Quando os 4 estiverem aqui, toquem em Começar partida.` : `Mande o código para a turma. ${modeLabel(st.n)}, cada partida vale $ ${esc(st.stake)}.`}</p>
         ${!account ? '<p class="notice">Entre com seu usuário no saguão para poder sentar.</p>' : ''}
         <div class="seats-lobby">${rows}</div>
         <div class="row"><button class="primary" id="start" ${filled === st.n && me >= 0 && !busy ? '' : 'disabled'}>Começar partida</button>
@@ -2157,7 +2642,7 @@ function ledgerHtml(st) {
   const wins = [0, 0]; (st.games || []).forEach(g => wins[g.winner]++);
   return `<section class="panel"><h3>Saldo de fichas</h3>
     ${rows ? `<table class="ledger"><tbody>${rows}</tbody></table>` : '<p class="muted">Ainda ninguém jogou nesta mesa.</p>'}
-    <p class="muted" style="font-size:13px">Cada partida vale $ ${esc(st.stake)}. Partidas: Time 1 ${wins[0]} × ${wins[1]} Time 2.</p></section>`;
+    <p class="muted" style="font-size:13px">${st.torneio ? 'Partida de torneio (sem aposta).' : `Cada partida vale $ ${esc(st.stake)}.`} Partidas: Time 1 ${wins[0]} × ${wins[1]} Time 2.</p></section>`;
 }
 
 function cardInner(c, vira) {
