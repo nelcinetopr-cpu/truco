@@ -158,12 +158,17 @@ main#app { display: grid; gap: 18px; min-width: 0; }
   padding: 4px 18px; border-radius: 8px; box-shadow: 0 8px 22px rgba(0,0,0,.5); white-space: nowrap; pointer-events: none;
 }
 /* carimbo grande do truco: fica por cima da tela toda e some sozinho */
-.stamp { position: fixed; z-index: 60; left: 50%; top: 42%; transform: translate(-50%, -50%) rotate(-8deg); pointer-events: none;
-  font-family: var(--display); font-size: clamp(56px, 17vw, 128px); line-height: 1; color: #fff3e6; background: var(--red);
-  padding: 10px 30px 14px; border-radius: 14px; border: 4px solid #fff3e6; box-shadow: 0 18px 50px rgba(0,0,0,.6); white-space: nowrap; text-align: center; }
-.stamp small { display: block; font-family: Figtree, system-ui, sans-serif; font-weight: 800; font-size: .2em; letter-spacing: 1px; margin-top: 4px; }
-.stamp.ok { background: #1f7a4d; }
-.stamp.run { background: #4a3a2a; }
+/* TRUCO! vindo na direção da tela, com raios atrás */
+.fx { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; pointer-events: none; perspective: 900px; }
+.fx .rays { position: absolute; width: 150vmax; height: 150vmax; border-radius: 50%;
+  background: repeating-conic-gradient(from 0deg, rgba(240, 190, 80, .28) 0deg 7deg, transparent 7deg 18deg);
+  -webkit-mask: radial-gradient(circle, #000 0%, #000 25%, transparent 62%); mask: radial-gradient(circle, #000 0%, #000 25%, transparent 62%); }
+.fx .word { position: relative; text-align: center; white-space: nowrap; font-family: var(--display); line-height: 1; color: #fff3e6;
+  font-size: clamp(50px, 15vw, 140px); padding: 10px 26px 14px; border-radius: 16px; background: var(--red); border: 5px solid #fff3e6;
+  box-shadow: 0 24px 60px rgba(0,0,0,.6), 0 0 0 6px rgba(0,0,0,.25); text-shadow: 0 4px 0 rgba(0,0,0,.25); }
+.fx .word small { display: block; font-family: Figtree, system-ui, sans-serif; font-weight: 800; font-size: .19em; letter-spacing: 1px; margin-top: 6px; text-shadow: none; }
+.fx.ok .word { background: #1f7a4d; font-size: clamp(36px, 11vw, 84px); }
+.fx.run .word { background: #4a3a2a; font-size: clamp(36px, 11vw, 84px); }
 
 /* ---- tela de jogo: tudo cabe numa tela ---- */
 .tablebar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -1866,12 +1871,15 @@ function initMusic() {
       <h4>Som de viola</h4>
       <div class="vrow"><button type="button" class="onoff"></button></div>
       <div class="vrow"><span aria-hidden="true">🔈</span><input type="range" min="0" max="100" step="5" aria-label="Volume da viola"><span class="pct"></span></div>
+      <h4>Som das cartas</h4>
+      <div class="vrow"><button type="button" class="onoff sfx"></button></div>
     </div>`;
   document.body.appendChild(box);
   const pop = box.querySelector('.vol'), tog = box.querySelector('.tog'), range = box.querySelector('input');
   const openPop = open => { pop.hidden = !open; tog.setAttribute('aria-expanded', String(open)); };
   tog.onclick = e => { e.stopPropagation(); openPop(pop.hidden); };
-  box.querySelector('.onoff').onclick = e => { e.stopPropagation(); setMusic(!music.on); };
+  box.querySelector('.onoff:not(.sfx)').onclick = e => { e.stopPropagation(); setMusic(!music.on); };
+  box.querySelector('.onoff.sfx').onclick = e => { e.stopPropagation(); setSfx(!sfx.on); };
   range.value = music.vol;
   range.oninput = () => {
     music.vol = +range.value;
@@ -1898,7 +1906,10 @@ function setMusic(on) {
 }
 function paintMusic() {
   const box = music.box; if (!box) return;
-  const tog = box.querySelector('.tog'), oo = box.querySelector('.onoff');
+  const tog = box.querySelector('.tog'), oo = box.querySelector('.onoff:not(.sfx)'), fx = box.querySelector('.onoff.sfx');
+  fx.textContent = sfx.on ? 'Ligado' : 'Desligado';
+  fx.classList.toggle('on', sfx.on);
+  fx.setAttribute('aria-pressed', String(sfx.on));
   tog.classList.toggle('off', !music.on || !music.vol);
   tog.title = 'Som de viola: ' + (music.on ? music.vol + '%' : 'desligado');
   oo.textContent = music.on ? 'Ligado' : 'Desligado';
@@ -1936,7 +1947,7 @@ function placeMusic() {
     if (box.parentNode !== bar) bar.insertBefore(box, bar.querySelector('button'));
   } else if (box.parentNode !== document.body) document.body.appendChild(box);
 }
-initMusic();
+setTimeout(initMusic); // depois do resto do código carregar (usa o som das cartas)
 
 // ---- apagar a conversa (e o aperto de mão da voz) no fim da partida ----
 async function clearChat(c) {
@@ -2628,7 +2639,7 @@ function render() {
   if (seated) {
     const cards = h.hands[me];
     handHtml = `<div class="hand ${myTurn ? 'playable' : ''}">${cards.map((c, i) =>
-      `<button class="card ${cardClass(c, h.vira)}" data-play="${i}" ${myTurn ? '' : 'disabled'} aria-label="${cardLabel(c)}${isManilha(c, h.vira) ? ', manilha' : ''}">${cardInner(c, h.vira)}</button>`).join('')}</div>`;
+      `<button class="card ${cardClass(c, h.vira)}" data-play="${i}" data-c="${c}" ${myTurn ? '' : 'disabled'} aria-label="${cardLabel(c)}${isManilha(c, h.vira) ? ', manilha' : ''}">${cardInner(c, h.vira)}</button>`).join('')}</div>`;
   }
   let partnerHtml = '';
   if (showPartner) {
@@ -2678,6 +2689,7 @@ function render() {
 
   const scoreUs = Math.min(st.score[us], 12), scoreThem = Math.min(st.score[them], 12);
   saveChatDraft();
+  const prevHand = captureHand();
   $app.innerHTML = `
   <div class="game">
     <div class="board">
@@ -2700,7 +2712,7 @@ function render() {
     <aside class="side">${tableBar}${chatPanelHtml()}${ledgerHtml(st)}${account && !solo ? '<section class="panel" id="payPanel"></section>' : ''}</aside>
   </div>`;
   $app.querySelectorAll('[data-leave]').forEach(b => (b.onclick = showLobby));
-  animateTable(st, hk, me);
+  animateTable(st, hk, me, prevHand);
   if (canChat()) { if (!vz || vz.code !== code) startVoice(code); } else if (vz) stopVoice();
   bindChat();
   renderPayments();
@@ -2708,6 +2720,7 @@ function render() {
 
   $app.querySelectorAll('[data-play]').forEach(b => (b.onclick = () => {
     const i = +b.dataset.play;
+    anim.from = { rect: b.getBoundingClientRect(), at: Date.now() }; // a carta sai daqui
     const c = cover;
     cover = false;
     commit(s => { if (s.phase !== 'play' || s.hand.turn !== me) return false; playCard(s, me, i, c && s.hand.rw.length >= 1); });
@@ -2720,77 +2733,187 @@ function render() {
    ANIMAÇÕES DA MESA
    Só anima o que é novo: a mesa é redesenhada a cada jogada, então
    cada carta jogada e cada pedido de truco é lembrado por uma chave.
+   As cartas são animadas pela posição de verdade na tela (de onde
+   saíram até onde pararam), por isso o movimento fica contínuo.
    ========================================================= */
 const calmMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const handKey = st => st.code + '_' + (st.hand ? st.hand.hid || [st.gameNo, st.dealer, st.hand.vira].join('-') : '');
-const anim = { table: null, seen: new Set(), hand: null, phase: null, pending: null };
-function animateTable(st, hk, me) {
+const anim = { table: null, seen: new Set(), hand: null, phase: null, pending: null, from: null, flying: new Set() };
+const SMOOTH = 'cubic-bezier(.22, 1, .36, 1)';   // sai rápido e pousa devagar
+const center = r => ({ x: r.left + r.width / 2, y: r.top + r.height / 2 });
+// posição das cartas da minha mão antes de redesenhar (para as que sobram deslizarem)
+function captureHand() {
+  const m = {};
+  $app.querySelectorAll('.hand .card[data-c]').forEach(el => (m[el.dataset.c] = el.getBoundingClientRect()));
+  return m;
+}
+function animateTable(st, hk, me, prevHand) {
   const fresh = anim.table !== st.code;           // acabou de abrir a mesa: não anima o que já estava lá
   if (fresh) { anim.table = st.code; anim.seen.clear(); anim.hand = anim.pending = null; }
   const h = st.hand, motion = !fresh && !calmMotion() && !!document.body.animate;
   const mesa = $app.querySelector('.mesa');
-  // 1. carta voando da cadeira até o meio da mesa
+  const mc = mesa ? center(mesa.getBoundingClientRect()) : null;
+  // 1. carta jogada: sai de onde estava e desliza até a mesa
+  let played = 0;
   $app.querySelectorAll('.played[data-ak]').forEach(el => {
     const k = el.dataset.ak;
+    if (anim.flying.has(k)) el.style.visibility = 'hidden';   // a cópia ainda está voando
     if (anim.seen.has(k)) return;
     anim.seen.add(k);
+    if (fresh) return;
+    played++;
     if (!motion || !mesa) return;
-    const [fx, fy] = el.dataset.from.split(',').map(Number);
-    const dx = fx / 100 * mesa.clientWidth, dy = fy / 100 * mesa.clientHeight;
-    const spin = (Math.random() * 30 - 15).toFixed(1);
-    el.animate([
-      { transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) rotate(${spin}deg) scale(.75)`, opacity: .85 },
-      { transform: 'translate(-50%, -50%) rotate(0deg) scale(1.08)', opacity: 1, offset: .8 },
-      { transform: 'translate(-50%, -50%)' },
-    ], { duration: 420, easing: 'cubic-bezier(.2,.8,.25,1)' });
+    const to = center(el.getBoundingClientRect());
+    let from;
+    const mine = el.dataset.ak.endsWith('|' + me) && me >= 0;
+    if (mine && anim.from && Date.now() - anim.from.at < 4000) from = center(anim.from.rect);   // a carta que eu toquei
+    else { const [fx, fy] = el.dataset.from.split(',').map(Number); from = { x: to.x + fx / 100 * mesa.clientWidth, y: to.y + fy / 100 * mesa.clientHeight }; }
+    const dx = from.x - to.x, dy = from.y - to.y;
+    const spin = (mine ? 0 : (Math.random() * 40 - 20)).toFixed(1);
+    flyCard(el, k, dx, dy, spin, mine ? 1.3 : .8);
   });
-  // 2. cartas novas na mão: saem do baralho uma de cada vez
+  if (played) { cardSound(); anim.from = null; }
+  // 2. cartas que ficaram na mão deslizam para o lugar novo
+  if (motion && prevHand && anim.hand === hk) {
+    $app.querySelectorAll('.hand .card[data-c]').forEach(el => {
+      const old = prevHand[el.dataset.c]; if (!old) return;
+      const now = el.getBoundingClientRect(), dx = old.left - now.left;
+      if (Math.abs(dx) > 2) el.animate([{ transform: `translateX(${dx}px)` }, { transform: 'none' }], { duration: 320, easing: SMOOTH });
+    });
+  }
+  // 3. mão nova: as cartas saem do meio da mesa, uma de cada vez
   if (anim.hand !== hk) {
-    if (motion && anim.hand !== null) {
-      $app.querySelectorAll('.hand .card').forEach((el, i) => el.animate([
-        { transform: 'translateY(-160px) rotate(-12deg) scale(.5)', opacity: 0 },
-        { transform: 'none', opacity: 1 },
-      ], { duration: 380, delay: 90 * i, easing: 'cubic-bezier(.2,.8,.25,1)', fill: 'backwards' }));
-      $app.querySelectorAll('.seat .mini').forEach(el => el.animate([{ opacity: 0, transform: 'scale(.6)' }, { opacity: 1, transform: 'none' }], { duration: 300, delay: 120 }));
+    if (!fresh && anim.hand !== null) {
+      const mine = [...$app.querySelectorAll('.hand .card')];
+      mine.forEach((el, i) => {
+        setTimeout(() => cardSound(0.6), 140 * i);
+        if (!motion || !mc) return;
+        const c = center(el.getBoundingClientRect());
+        const turn = (Math.random() * 50 - 25).toFixed(1);
+        el.animate([
+          { transform: `translate(${mc.x - c.x}px, ${mc.y - c.y}px) rotate(${turn}deg) scale(.45)`, opacity: 0 },
+          { opacity: 1, offset: .25 },
+          { transform: 'none', opacity: 1 },
+        ], { duration: 560, delay: 140 * i, easing: SMOOTH, fill: 'backwards' });
+      });
+      if (motion && mc) $app.querySelectorAll('.seat .mini .card').forEach((el, i) => {
+        const c = center(el.getBoundingClientRect());
+        el.animate([
+          { transform: `translate(${mc.x - c.x}px, ${mc.y - c.y}px) scale(.6)`, opacity: 0 },
+          { opacity: 1, offset: .3 },
+          { transform: 'none', opacity: 1 },
+        ], { duration: 480, delay: 60 * i, easing: SMOOTH, fill: 'backwards' });
+      });
     }
     anim.hand = hk;
   }
-  // 3. truco, seis, nove, doze: carimbo grande e a mesa treme
+  // 4. truco, seis, nove, doze: a palavra vem na direção da tela
   const p = h && h.pending;
   const pk = st.phase === 'truco' && p ? `${hk}|${p.to}|${p.caller}` : null;
   if (pk && pk !== anim.pending && !fresh) {
-    stamp(`${RAISE_NAME[p.to]}!`, `${nick(st, p.caller)} pediu`, '');
-    if (motion && mesa) mesa.animate([
-      { transform: 'none' }, { transform: 'translateX(-10px) rotate(-.6deg)' }, { transform: 'translateX(9px) rotate(.5deg)' },
-      { transform: 'translateX(-6px)' }, { transform: 'translateX(4px)' }, { transform: 'none' },
-    ], { duration: 450, delay: 120, easing: 'ease-out' });
+    shout(`${RAISE_NAME[p.to]}!`, `${nick(st, p.caller)} pediu`, '');
     if (me >= 0 && p.responder === me && navigator.vibrate) navigator.vibrate([90, 50, 90]);
   } else if (!fresh && anim.phase === 'truco' && st.phase !== 'truco' && anim.pending && anim.pending.startsWith(hk + '|')) {
     // resposta: aceitou ou correu
-    if (st.phase === 'handEnd' || st.phase === 'gameEnd') stamp('Correu!', '', 'run');
-    else if (st.phase === 'play') stamp('Aceitou!', `valendo ${h.value}`, 'ok');
+    if (st.phase === 'handEnd' || st.phase === 'gameEnd') shout('Correu!', '', 'run');
+    else if (st.phase === 'play') shout('Aceitou!', `valendo ${h.value}`, 'ok');
   }
   if (pk) anim.pending = pk;
   anim.phase = st.phase;
 }
-function stamp(text, sub, kind) {
-  document.querySelectorAll('.stamp').forEach(e => e.remove());
+// A carta voa numa cópia por cima de tudo (a mesa corta o que passa da borda),
+// e a de verdade aparece quando a cópia pousa.
+function flyCard(el, k, dx, dy, spin, from) {
+  const card = el.querySelector('.card'); if (!card) return;
+  const r = card.getBoundingClientRect();
+  const g = card.cloneNode(true);
+  Object.assign(g.style, { position: 'fixed', left: r.left + 'px', top: r.top + 'px', width: r.width + 'px', height: r.height + 'px', margin: 0, zIndex: 55, pointerEvents: 'none', fontSize: getComputedStyle(card).fontSize });
+  g.classList.add('ghost');
+  document.body.appendChild(g);
+  el.style.visibility = 'hidden';
+  anim.flying.add(k);
+  const done = () => {
+    g.remove(); anim.flying.delete(k);
+    $app.querySelectorAll('.played[data-ak]').forEach(p => { if (p.dataset.ak === k) p.style.visibility = ''; });
+  };
+  const a = g.animate([
+    { transform: `translate(${dx}px, ${dy}px) rotate(${spin}deg) scale(${from})`, boxShadow: '0 22px 34px rgba(0,0,0,.5)' },
+    { transform: 'none', boxShadow: '0 2px 6px rgba(0,0,0,.35)' },
+  ], { duration: 560, easing: SMOOTH });
+  a.onfinish = a.oncancel = done;
+  setTimeout(done, 900); // se a aba estiver em segundo plano
+}
+function shout(text, sub, kind) {
+  document.querySelectorAll('.fx').forEach(e => e.remove());
+  const big = !kind, ms = big ? 1700 : 1150;
   const el = document.createElement('div');
-  el.className = 'stamp ' + (kind || '');
+  el.className = 'fx ' + (kind || '');
   el.setAttribute('role', 'status');
-  el.innerHTML = esc(text) + (sub ? `<small>${esc(sub)}</small>` : '');
+  el.innerHTML = (big ? '<div class="rays"></div>' : '') + `<div class="word">${esc(text)}${sub ? `<small>${esc(sub)}</small>` : ''}</div>`;
   document.body.appendChild(el);
-  const big = !kind, ms = big ? 1400 : 1000;
-  if (calmMotion() || !el.animate) { setTimeout(() => el.remove(), ms); return; }
-  const base = 'translate(-50%, -50%) rotate(-8deg)';
+  setTimeout(() => el.remove(), ms + 300);
+  if (calmMotion() || !el.animate) return;
+  const w = el.querySelector('.word'), tilt = big ? -7 : -4;
+  // longe (pequena) → passa um pouco da tela → assenta → segue vindo e some
+  w.animate([
+    { transform: `translateZ(-2600px) rotate(${tilt - 10}deg)`, opacity: 0, easing: 'cubic-bezier(.15, .85, .3, 1)' },
+    { transform: `translateZ(120px) rotate(${tilt + 2}deg)`, opacity: 1, offset: .26, easing: 'ease-out' },
+    { transform: `translateZ(0) rotate(${tilt}deg)`, opacity: 1, offset: .36 },
+    { transform: `translateZ(20px) rotate(${tilt}deg)`, opacity: 1, offset: .78, easing: 'cubic-bezier(.6, 0, .9, .5)' },
+    { transform: `translateZ(520px) rotate(${tilt}deg)`, opacity: 0 },
+  ], { duration: ms, fill: 'both' });
   el.animate([
-    { transform: `${base} scale(${big ? 3 : 1.8})`, opacity: 0 },
-    { transform: `${base} scale(.92)`, opacity: 1, offset: .22 },
-    { transform: `${base} scale(1.04)`, offset: .32 },
-    { transform: `${base} scale(1)`, opacity: 1, offset: .8 },
-    { transform: `${base} scale(1.1)`, opacity: 0 },
-  ], { duration: ms, easing: 'ease-out' }).onfinish = () => el.remove();
-  setTimeout(() => el.remove(), ms + 300); // se a aba estiver em segundo plano
+    { background: 'rgba(0,0,0,0)' }, { background: 'rgba(0,0,0,.38)', offset: .25 },
+    { background: 'rgba(0,0,0,.3)', offset: .78 }, { background: 'rgba(0,0,0,0)' },
+  ], { duration: ms, fill: 'both' });
+  const r = el.querySelector('.rays');
+  if (r) r.animate([
+    { transform: 'scale(.2) rotate(0deg)', opacity: 0 },
+    { transform: 'scale(1) rotate(25deg)', opacity: 1, offset: .3 },
+    { transform: 'scale(1.15) rotate(60deg)', opacity: .8, offset: .78 },
+    { transform: 'scale(1.4) rotate(80deg)', opacity: 0 },
+  ], { duration: ms, fill: 'both' });
+}
+
+/* Som de carta deslizando no pano: um chiado curto e baixinho, feito na hora
+   (ruído filtrado), sem arquivo. Liga/desliga no painel do 🎵. */
+const sfx = { ctx: null, noise: null, on: true };
+try { sfx.on = localStorage.getItem('truco.efeitos') !== 'off'; } catch {}
+function sfxReady() {
+  if (sfx.ctx) return sfx.ctx.state === 'running';
+  const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return false;
+  try {
+    sfx.ctx = new AC();
+    const n = Math.floor(sfx.ctx.sampleRate * 0.5), b = sfx.ctx.createBuffer(1, n, sfx.ctx.sampleRate), d = b.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+    sfx.noise = b;
+  } catch { sfx.ctx = null; return false; }
+  return sfx.ctx.state === 'running';
+}
+// o navegador só libera som depois de um toque na tela
+document.addEventListener('pointerdown', () => { sfxReady(); if (sfx.ctx && sfx.ctx.state === 'suspended') sfx.ctx.resume().catch(() => {}); }, { capture: true });
+function cardSound(level = 1) {
+  if (!sfx.on || !sfxReady()) return;
+  const c = sfx.ctx, t = c.currentTime + 0.01, dur = 0.16 + Math.random() * 0.05;
+  const src = c.createBufferSource(); src.buffer = sfx.noise;
+  const bp = c.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 0.9;
+  bp.frequency.setValueAtTime(3200 + Math.random() * 600, t);
+  bp.frequency.exponentialRampToValueAtTime(900, t + dur);       // o chiado "desce" como papel no pano
+  const hp = c.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 500;
+  const g = c.createGain();
+  const peak = 0.05 * level;                                       // bem baixo
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(peak, t + 0.018);
+  g.gain.exponentialRampToValueAtTime(peak * 0.35, t + dur * 0.6);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  src.connect(bp).connect(hp).connect(g).connect(c.destination);
+  src.start(t, Math.random() * 0.3, dur + 0.02);
+}
+function setSfx(on) {
+  sfx.on = on;
+  try { localStorage.setItem('truco.efeitos', on ? 'on' : 'off'); } catch {}
+  if (on) cardSound();
+  paintMusic();
 }
 
 function act(a, me = mySeat()) {
