@@ -430,14 +430,80 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 4px; color
 .tablebar .music { position: relative; left: auto; bottom: auto; }
 .tablebar .music .vol { bottom: auto; top: 40px; }
 @media (hover: hover) { .music button:hover { opacity: 1; } }
+/* ---- abas dos jogos no topo: truco, poker, cacheta ---- */
+.games { display: flex; gap: 6px; margin: 0 0 16px; padding: 4px; border-radius: 14px; background: var(--felt-deep); border: 1px solid var(--line); }
+.games button { flex: 1 1 0; border: 0; background: transparent; color: var(--muted); font-family: var(--display); font-weight: 400; font-size: 18px; padding: 9px 6px; border-radius: 10px; line-height: 1.1; }
+.games button small { display: block; font-family: var(--body); font-size: 10px; letter-spacing: 1px; text-transform: uppercase; font-weight: 800; opacity: .75; }
+.games button[aria-current="page"] { background: var(--brass); color: #2a1a05; }
+@media (hover: hover) { .games button:hover:not([aria-current="page"]) { background: #164a37; color: var(--text); } }
+body.in-game .games { display: none; }
+
+/* ---- poker ---- */
+.game.poker { grid-template-columns: minmax(0, 1fr); max-width: 980px; width: 100%; margin-inline: auto; }
+.game.poker .board > .tablebar { display: flex; }
+.pmesa .pseat { position: absolute; transform: translate(-50%, -50%); display: grid; justify-items: center; gap: 2px; text-align: center; max-width: 36%; z-index: 2; }
+.pseat .name { font-weight: 800; font-size: 12px; padding: 2px 8px; border-radius: 99px; background: rgba(0,0,0,.5); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; border: 2px solid transparent; }
+.pseat .stack { font-weight: 800; font-size: 12px; color: var(--brass); font-variant-numeric: tabular-nums; }
+.pseat.turn .name { border-color: var(--brass); box-shadow: 0 0 12px rgba(224,173,74,.6); }
+.pseat.turn .avatar { box-shadow: 0 0 0 3px var(--brass), 0 0 14px rgba(224,173,74,.6); }
+.pseat.folded { opacity: .45; }
+.pseat.won .avatar { box-shadow: 0 0 0 3px #5fd38a, 0 0 18px rgba(95,211,138,.8); }
+.pseat .ptags { display: flex; gap: 4px; align-items: center; }
+.pseat .tag.allin { background: var(--red); color: #fff3e6; }
+.dbtn { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: #f7f1e3; color: #1d1a14; font-size: 11px; font-weight: 800; box-shadow: 0 1px 3px rgba(0,0,0,.5); }
+.pseat .pcards { display: flex; gap: 2px; }
+.pseat .pcards .card { width: 26px; font-size: 8px; border-radius: 4px; }
+.pseat .pcards .card.back { border-width: 2px; }
+.pseat .phand { font-size: 11px; font-weight: 800; color: #8fd9a8; white-space: nowrap; }
+.pseat.empty button { font-size: 12px; }
+.pbet { position: absolute; transform: translate(-50%, -50%); z-index: 1; display: flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 800; padding: 2px 8px 2px 3px; border-radius: 99px; background: rgba(0,0,0,.45); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pbet i { width: 14px; height: 14px; border-radius: 50%; background: radial-gradient(circle, #f7f1e3 0 30%, var(--red) 31% 100%); border: 2px dashed #f7f1e3; box-sizing: border-box; }
+.pcenter { position: absolute; left: 50%; top: 46%; transform: translate(-50%, -50%); display: grid; gap: 6px; justify-items: center; width: 72%; pointer-events: none; z-index: 1; }
+.pboard { display: flex; gap: 4px; justify-content: center; perspective: 600px; }
+.pboard .card { width: clamp(30px, 8vw, 56px); font-size: clamp(10px, 2vw, 15px); }
+.card.slot { background: rgba(0,0,0,.18); border: 1px dashed rgba(255,255,255,.18); box-shadow: none; }
+.ppot { font-weight: 800; font-size: 14px; padding: 2px 10px; border-radius: 99px; background: rgba(0,0,0,.4); color: var(--brass); font-variant-numeric: tabular-nums; }
+.presult { font-size: 13px; text-align: center; background: rgba(0,0,0,.5); padding: 6px 10px; border-radius: 10px; line-height: 1.35; }
+.pact { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+.pact button { min-width: 96px; }
+.praise { display: flex; align-items: center; gap: 10px; width: min(420px, 100%); }
+.praise input, .pk-buy input { flex: 1 1 0; width: auto; accent-color: var(--brass); padding: 0; border: 0; background: none; height: 30px; min-width: 0; }
+.praise b { min-width: 72px; text-align: right; font-variant-numeric: tabular-nums; }
+.pquick { justify-content: center; }
+.pmade { color: #8fd9a8; font-weight: 800; }
+.phand-mine .card.mucked { opacity: .4; }
+.pk-modal { position: fixed; inset: 0; z-index: 70; display: grid; place-items: center; background: rgba(0,0,0,.55); padding: 16px; }
+.pk-modal-card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px; display: grid; gap: 12px; width: min(380px, 100%); }
+.pk-buy { display: flex; gap: 10px; align-items: center; }
+.pk-buy b { font-size: 20px; min-width: 84px; text-align: right; font-variant-numeric: tabular-nums; }
+.pk-ranks { margin: 0; padding-left: 22px; display: grid; gap: 2px; font-size: 14px; }
+.wallet { display: grid; gap: 2px; padding: 12px 14px; border-radius: 12px; background: var(--felt-deep); border: 1px solid var(--line); }
+.wallet b { font-family: var(--display); font-weight: 400; font-size: 28px; color: var(--brass); }
+.movs { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 4px; font-size: 13px; }
+.movs li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 10px; padding: 6px 8px; border-radius: 8px; background: var(--felt-deep); }
+.movs li small { grid-column: 1 / -1; font-size: 11px; }
+.movs .pos, .hist-sum .pos { color: #8fd9a8; } .movs .neg, .hist-sum .neg { color: var(--them); }
+.hist-sum { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; margin-top: 6px; }
+@media (max-width: 560px) {
+  .pseat .name { font-size: 10px; padding: 1px 6px; }
+  .pseat .stack { font-size: 11px; }
+  .pseat .pcards .card { width: 20px; font-size: 7px; }
+  .pbet { font-size: 11px; }
+  .pact button { min-width: 0; flex: 1 1 0; }
+}
 </style>
 </head>
 <body>
 <div class="wrap">
   <header class="top">
-    <h1 class="brand"><img class="logo" src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1MTIgNTEyIiB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiI+IDxkZWZzPiA8cmFkaWFsR3JhZGllbnQgaWQ9ImZlbHQiIGN4PSI1MCUiIGN5PSI0MiUiIHI9IjcwJSI+IDxzdG9wIG9mZnNldD0iMCIgc3RvcC1jb2xvcj0iIzFmNmE0ZCIvPiA8c3RvcCBvZmZzZXQ9IjAuNTUiIHN0b3AtY29sb3I9IiMxMjQwMmYiLz4gPHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjMGEyODFkIi8+IDwvcmFkaWFsR3JhZGllbnQ+IDxsaW5lYXJHcmFkaWVudCBpZD0iZ29sZCIgeDE9IjAiIHkxPSIwIiB4Mj0iMSIgeTI9IjEiPiA8c3RvcCBvZmZzZXQ9IjAiIHN0b3AtY29sb3I9IiNmZmY2ZDIiLz4gPHN0b3Agb2Zmc2V0PSIwLjM4IiBzdG9wLWNvbG9yPSIjZjZkYzhhIi8+IDxzdG9wIG9mZnNldD0iMC43MiIgc3RvcC1jb2xvcj0iI2UzYjU0ZiIvPiA8c3RvcCBvZmZzZXQ9IjEiIHN0b3AtY29sb3I9IiNjOTk2MzIiLz4gPC9saW5lYXJHcmFkaWVudD4gPHBhdHRlcm4gaWQ9ImJhY2siIHdpZHRoPSIyMiIgaGVpZ2h0PSIyMiIgcGF0dGVyblVuaXRzPSJ1c2VyU3BhY2VPblVzZSIgcGF0dGVyblRyYW5zZm9ybT0icm90YXRlKDQ1KSI+IDxyZWN0IHdpZHRoPSIyMiIgaGVpZ2h0PSIyMiIgZmlsbD0iIzhkMmEyMiIvPiA8cmVjdCB3aWR0aD0iMTEiIGhlaWdodD0iMjIiIGZpbGw9IiNhOTM4MmQiLz4gPC9wYXR0ZXJuPiA8ZyBpZD0iY2x1YiI+IDxjaXJjbGUgY3g9IjAiIGN5PSItMTAiIHI9IjEwLjUiLz4gPGNpcmNsZSBjeD0iLTEwLjUiIGN5PSI1IiByPSIxMC41Ii8+IDxjaXJjbGUgY3g9IjEwLjUiIGN5PSI1IiByPSIxMC41Ii8+IDxjaXJjbGUgY3g9IjAiIGN5PSIyIiByPSI2Ii8+IDxwYXRoIGQ9Ik0tMS41IDIgUS0yIDE2IC04IDI0IEw4IDI0IFEyIDE2IDEuNSAyIFoiLz4gPC9nPiA8ZmlsdGVyIGlkPSJzaGFkb3ciIHg9Ii0yMCUiIHk9Ii0yMCUiIHdpZHRoPSIxNDAlIiBoZWlnaHQ9IjE0MCUiPiA8ZmVEcm9wU2hhZG93IGR4PSIwIiBkeT0iMTAiIHN0ZERldmlhdGlvbj0iMTIiIGZsb29kLWNvbG9yPSIjMDAwIiBmbG9vZC1vcGFjaXR5PSIwLjUiLz4gPC9maWx0ZXI+IDwvZGVmcz4gPHJlY3Qgd2lkdGg9IjUxMiIgaGVpZ2h0PSI1MTIiIHJ4PSIxMTIiIGZpbGw9IiM0YTJjMTgiLz4gPHJlY3QgeD0iMTgiIHk9IjE4IiB3aWR0aD0iNDc2IiBoZWlnaHQ9IjQ3NiIgcng9Ijk2IiBmaWxsPSJ1cmwoI2ZlbHQpIi8+IDxyZWN0IHg9IjE4IiB5PSIxOCIgd2lkdGg9IjQ3NiIgaGVpZ2h0PSI0NzYiIHJ4PSI5NiIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjNmI0MjI2IiBzdHJva2Utd2lkdGg9IjQiLz4gPGcgdHJhbnNmb3JtPSJyb3RhdGUoLTE0IDI1NiAyNzApIiBmaWx0ZXI9InVybCgjc2hhZG93KSI+IDxyZWN0IHg9IjEyOCIgeT0iMTA0IiB3aWR0aD0iMTk2IiBoZWlnaHQ9IjI3NiIgcng9IjIyIiBmaWxsPSIjZjdmMWUzIi8+IDxyZWN0IHg9IjE0MCIgeT0iMTE2IiB3aWR0aD0iMTcyIiBoZWlnaHQ9IjI1MiIgcng9IjE0IiBmaWxsPSJ1cmwoI2JhY2spIi8+IDwvZz4gPGcgdHJhbnNmb3JtPSJyb3RhdGUoOSAyNTYgMjcwKSIgZmlsdGVyPSJ1cmwoI3NoYWRvdykiPiA8cmVjdCB4PSIxOTAiIHk9IjExOCIgd2lkdGg9IjE5NiIgaGVpZ2h0PSIyNzYiIHJ4PSIyMiIgZmlsbD0idXJsKCNnb2xkKSIgc3Ryb2tlPSIjYTk3ODFmIiBzdHJva2Utd2lkdGg9IjUiLz4gPHRleHQgeD0iMjE0IiB5PSIxNzgiIGZvbnQtZmFtaWx5PSJHZW9yZ2lhLCAnVGltZXMgTmV3IFJvbWFuJywgc2VyaWYiIGZvbnQtd2VpZ2h0PSI3MDAiIGZvbnQtc2l6ZT0iNTgiIGZpbGw9IiMxZDFhMTQiPjQ8L3RleHQ+IDx1c2UgaHJlZj0iI2NsdWIiIHRyYW5zZm9ybT0idHJhbnNsYXRlKDIzMyAyMTQpIHNjYWxlKDEuMDUpIiBmaWxsPSIjMWQxYTE0Ii8+IDx1c2UgaHJlZj0iI2NsdWIiIHRyYW5zZm9ybT0idHJhbnNsYXRlKDI4OCAyNjIpIHNjYWxlKDMuNCkiIGZpbGw9IiMxZDFhMTQiLz4gPHBhdGggdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMzQ2IDM1MCkiIGZpbGw9IiM3YTRmMDUiIGQ9Ik0xNCAwbDQuMSA5LjMgMTAgLjktNy42IDYuNiAyLjMgOS44TDE0IDIxLjQgNS4yIDI2LjZsMi4zLTkuOEwtLjEgMTAuMmwxMC0uOXoiLz4gPC9nPiA8L3N2Zz4=" alt="">TRUCO <small>paulista · com vira</small></h1>
+    <h1 class="brand"><img class="logo" src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1MTIgNTEyIiB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiI+IDxkZWZzPiA8cmFkaWFsR3JhZGllbnQgaWQ9ImZlbHQiIGN4PSI1MCUiIGN5PSI0MiUiIHI9IjcwJSI+IDxzdG9wIG9mZnNldD0iMCIgc3RvcC1jb2xvcj0iIzFmNmE0ZCIvPiA8c3RvcCBvZmZzZXQ9IjAuNTUiIHN0b3AtY29sb3I9IiMxMjQwMmYiLz4gPHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjMGEyODFkIi8+IDwvcmFkaWFsR3JhZGllbnQ+IDxsaW5lYXJHcmFkaWVudCBpZD0iZ29sZCIgeDE9IjAiIHkxPSIwIiB4Mj0iMSIgeTI9IjEiPiA8c3RvcCBvZmZzZXQ9IjAiIHN0b3AtY29sb3I9IiNmZmY2ZDIiLz4gPHN0b3Agb2Zmc2V0PSIwLjM4IiBzdG9wLWNvbG9yPSIjZjZkYzhhIi8+IDxzdG9wIG9mZnNldD0iMC43MiIgc3RvcC1jb2xvcj0iI2UzYjU0ZiIvPiA8c3RvcCBvZmZzZXQ9IjEiIHN0b3AtY29sb3I9IiNjOTk2MzIiLz4gPC9saW5lYXJHcmFkaWVudD4gPHBhdHRlcm4gaWQ9ImJhY2siIHdpZHRoPSIyMiIgaGVpZ2h0PSIyMiIgcGF0dGVyblVuaXRzPSJ1c2VyU3BhY2VPblVzZSIgcGF0dGVyblRyYW5zZm9ybT0icm90YXRlKDQ1KSI+IDxyZWN0IHdpZHRoPSIyMiIgaGVpZ2h0PSIyMiIgZmlsbD0iIzhkMmEyMiIvPiA8cmVjdCB3aWR0aD0iMTEiIGhlaWdodD0iMjIiIGZpbGw9IiNhOTM4MmQiLz4gPC9wYXR0ZXJuPiA8ZyBpZD0iY2x1YiI+IDxjaXJjbGUgY3g9IjAiIGN5PSItMTAiIHI9IjEwLjUiLz4gPGNpcmNsZSBjeD0iLTEwLjUiIGN5PSI1IiByPSIxMC41Ii8+IDxjaXJjbGUgY3g9IjEwLjUiIGN5PSI1IiByPSIxMC41Ii8+IDxjaXJjbGUgY3g9IjAiIGN5PSIyIiByPSI2Ii8+IDxwYXRoIGQ9Ik0tMS41IDIgUS0yIDE2IC04IDI0IEw4IDI0IFEyIDE2IDEuNSAyIFoiLz4gPC9nPiA8ZmlsdGVyIGlkPSJzaGFkb3ciIHg9Ii0yMCUiIHk9Ii0yMCUiIHdpZHRoPSIxNDAlIiBoZWlnaHQ9IjE0MCUiPiA8ZmVEcm9wU2hhZG93IGR4PSIwIiBkeT0iMTAiIHN0ZERldmlhdGlvbj0iMTIiIGZsb29kLWNvbG9yPSIjMDAwIiBmbG9vZC1vcGFjaXR5PSIwLjUiLz4gPC9maWx0ZXI+IDwvZGVmcz4gPHJlY3Qgd2lkdGg9IjUxMiIgaGVpZ2h0PSI1MTIiIHJ4PSIxMTIiIGZpbGw9IiM0YTJjMTgiLz4gPHJlY3QgeD0iMTgiIHk9IjE4IiB3aWR0aD0iNDc2IiBoZWlnaHQ9IjQ3NiIgcng9Ijk2IiBmaWxsPSJ1cmwoI2ZlbHQpIi8+IDxyZWN0IHg9IjE4IiB5PSIxOCIgd2lkdGg9IjQ3NiIgaGVpZ2h0PSI0NzYiIHJ4PSI5NiIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjNmI0MjI2IiBzdHJva2Utd2lkdGg9IjQiLz4gPGcgdHJhbnNmb3JtPSJyb3RhdGUoLTE0IDI1NiAyNzApIiBmaWx0ZXI9InVybCgjc2hhZG93KSI+IDxyZWN0IHg9IjEyOCIgeT0iMTA0IiB3aWR0aD0iMTk2IiBoZWlnaHQ9IjI3NiIgcng9IjIyIiBmaWxsPSIjZjdmMWUzIi8+IDxyZWN0IHg9IjE0MCIgeT0iMTE2IiB3aWR0aD0iMTcyIiBoZWlnaHQ9IjI1MiIgcng9IjE0IiBmaWxsPSJ1cmwoI2JhY2spIi8+IDwvZz4gPGcgdHJhbnNmb3JtPSJyb3RhdGUoOSAyNTYgMjcwKSIgZmlsdGVyPSJ1cmwoI3NoYWRvdykiPiA8cmVjdCB4PSIxOTAiIHk9IjExOCIgd2lkdGg9IjE5NiIgaGVpZ2h0PSIyNzYiIHJ4PSIyMiIgZmlsbD0idXJsKCNnb2xkKSIgc3Ryb2tlPSIjYTk3ODFmIiBzdHJva2Utd2lkdGg9IjUiLz4gPHRleHQgeD0iMjE0IiB5PSIxNzgiIGZvbnQtZmFtaWx5PSJHZW9yZ2lhLCAnVGltZXMgTmV3IFJvbWFuJywgc2VyaWYiIGZvbnQtd2VpZ2h0PSI3MDAiIGZvbnQtc2l6ZT0iNTgiIGZpbGw9IiMxZDFhMTQiPjQ8L3RleHQ+IDx1c2UgaHJlZj0iI2NsdWIiIHRyYW5zZm9ybT0idHJhbnNsYXRlKDIzMyAyMTQpIHNjYWxlKDEuMDUpIiBmaWxsPSIjMWQxYTE0Ii8+IDx1c2UgaHJlZj0iI2NsdWIiIHRyYW5zZm9ybT0idHJhbnNsYXRlKDI4OCAyNjIpIHNjYWxlKDMuNCkiIGZpbGw9IiMxZDFhMTQiLz4gPHBhdGggdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMzQ2IDM1MCkiIGZpbGw9IiM3YTRmMDUiIGQ9Ik0xNCAwbDQuMSA5LjMgMTAgLjktNy42IDYuNiAyLjMgOS44TDE0IDIxLjQgNS4yIDI2LjZsMi4zLTkuOEwtLjEgMTAuMmwxMC0uOXoiLz4gPC9nPiA8L3N2Zz4=" alt="">TRUCO <small id="brandSub">paulista · com vira</small></h1>
     <div class="row" id="topRight"></div>
   </header>
+  <nav class="games" id="games" aria-label="Jogos">
+    <button type="button" data-game="truco">Truco</button>
+    <button type="button" data-game="poker">Poker</button>
+    <button type="button" data-game="cacheta">Cacheta<small>em breve</small></button>
+  </nav>
   <div id="notice" class="notice" hidden></div>
   <main id="app"><p class="muted">Abrindo a mesa…</p></main>
 </div>
@@ -448,6 +514,7 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 4px; color
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="firebase-config.js"></script>
 <script src="voz-config.js"></script>
+<script src="poker.js"></script>
 <script>
 /* =========================================================
    REGRAS — Truco Paulista (baralho de 40 cartas, com vira)
@@ -616,7 +683,7 @@ function mockDb() {
    então cada documento vai guardado como texto JSON no campo "j". Os campos usados
    em buscas e nas regras de segurança também ficam soltos no documento.
    ========================================================= */
-const TOP_FIELDS = ['updatedAt', 'aliveAt', 'closedAt', 'at', 'to', 'from', 'status', 'confirmedAt', 'uid', 'name', 'table', 'owner', 'orgs', 'p1', 'p2', 'torneio', 'createdAt'];
+const TOP_FIELDS = ['updatedAt', 'aliveAt', 'closedAt', 'at', 'to', 'from', 'status', 'confirmedAt', 'uid', 'name', 'table', 'owner', 'orgs', 'p1', 'p2', 'torneio', 'createdAt', 'key'];
 const EMAIL_DOMAIN = 'truco.jogo';   // as contas do Firebase usam usuario@truco.jogo (nenhum e-mail é enviado)
 const pinPassword = pin => 'truco#' + pin; // o Firebase exige 6+ caracteres
 
@@ -769,6 +836,29 @@ try { account = JSON.parse(localStorage.getItem('truco:conta') || 'null'); } cat
 if (account) { myId = account.key; myNick = account.name; }
 
 const $app = document.getElementById('app');
+
+/* ---------------- ABAS DOS JOGOS: truco, poker e cacheta ----------------
+   O poker fica no arquivo poker.js; a cacheta ainda não existe. */
+let currentGame = 'truco';
+try { const g = localStorage.getItem('jogo'); if (['truco', 'poker', 'cacheta'].includes(g)) currentGame = g; } catch {}
+const GAME_SUB = { truco: 'paulista · com vira', poker: "texas hold'em", cacheta: 'em breve' };
+function paintGameNav() {
+  document.querySelectorAll('#games [data-game]').forEach(b => b.setAttribute('aria-current', b.dataset.game === currentGame ? 'page' : 'false'));
+  const sub = document.getElementById('brandSub'); if (sub) sub.textContent = GAME_SUB[currentGame];
+}
+function setGame(g) {
+  if (g === 'poker' && typeof showPokerLobby !== 'function') return toast('O poker não carregou. Recarregue a página.');
+  currentGame = g;
+  try { localStorage.setItem('jogo', g); } catch {}
+  showLobby();
+  scrollTo(0, 0);
+}
+document.querySelectorAll('#games [data-game]').forEach(b => (b.onclick = () => setGame(b.dataset.game)));
+paintGameNav();
+function showCachetaSoon() {
+  stopTourneyLobby();
+  $app.innerHTML = `<section class="panel"><h2>Cacheta</h2><p class="muted">A cacheta está a caminho. Por enquanto, dá para jogar truco e poker.</p></section>`;
+}
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 function toast(msg, ms = 3200) {
   const t = document.getElementById('toast');
@@ -803,7 +893,8 @@ async function init() {
   }
   startPayments();
   const h = location.hash.replace('#', '').toUpperCase();
-  if (h && /^[A-Z0-9]{4,8}$/.test(h)) openTable(h); else showLobby();
+  if (h.startsWith('POKER-') && typeof openPokerTable === 'function') { currentGame = 'poker'; paintGameNav(); openPokerTable(h.slice(6)); }
+  else if (h && /^[A-Z0-9]{4,8}$/.test(h)) openTable(h); else showLobby();
 }
 
 const tableRef = c => db.doc('mesas/' + c);
@@ -926,6 +1017,10 @@ function showLobby() {
   if (location.hash) history.replaceState(null, '', location.pathname + location.search);
   document.getElementById('topRight').innerHTML = account
     ? `<span class="muted">Jogando como</span> <b class="team0">${esc(account.name)}</b> <button class="small" id="logout">Sair</button>` : '';
+  paintGameNav();
+  if (typeof pokerLeave === 'function') pokerLeave();
+  if (currentGame === 'poker' && typeof showPokerLobby === 'function') { pkBindLogout(); return showPokerLobby(); }
+  if (currentGame === 'cacheta') { pkBindLogout(); return showCachetaSoon(); }
   const chipOpts = CHIP_VALUES.map(v => `<option value="${v}" ${v === 5 ? 'selected' : ''}>$ ${v}</option>`).join('');
   const accountPanel = account ? '' : `
       <section class="panel">
@@ -1283,7 +1378,7 @@ function loadPhoto(id) {
   photoLoading.add(id);
   db.doc('fotos/' + id).get().then(s => { photoCache[id] = s.exists ? s.data().img || null : null; })
     .catch(() => { photoCache[id] = null; })
-    .finally(() => { photoLoading.delete(id); if (cur) render(); renderPhotoPanel(); });
+    .finally(() => { photoLoading.delete(id); if (cur) render(); else if (typeof pk !== 'undefined' && pk) pkRender(); renderPhotoPanel(); });
 }
 
 function initials(name) { return (name || '?').trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase(); }
@@ -1371,6 +1466,7 @@ function profitFor(id, since) {
   let won = 0, lost = 0, wins = 0, losses = 0;
   for (const g of allGames || []) {
     if (g.at < since) continue;
+    if (g.delta) { const v = g.delta[id]; if (v > 0) { won += v; wins++; } else if (v < 0) { lost -= v; losses++; } continue; }
     if (g.winners.includes(id)) { won += g.value; wins++; }
     else if (g.losers.includes(id)) { lost += g.value; losses++; }
   }
