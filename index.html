@@ -253,14 +253,20 @@ body.in-game .partner { flex: none; }
 .seat .speech.ar::after { left: auto; right: 8px; transform: none; }
 @media (prefers-reduced-motion: no-preference) { .seat .speech { animation: speechIn .18s ease-out; } }
 @keyframes speechIn { from { opacity: 0; } }
+.mtools { display: none; align-self: flex-end; gap: 8px; margin-top: -40px; position: relative; z-index: 3; flex: none; }
+.mtools .round { width: 48px; height: 48px; padding: 0; border-radius: 50%; font-size: 21px; display: grid; place-items: center; box-shadow: 0 4px 12px rgba(0,0,0,.45); }
+.mtools .chat-toggle { display: grid; background: #164a37; border: 1px solid var(--line); }
 .chat-toggle { position: relative; display: none; font-size: 16px; padding: 6px 12px; }
 .chat-toggle .badge { position: absolute; top: -6px; right: -6px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 99px; background: var(--red); color: #fff3e6; font-size: 11px; line-height: 18px; text-align: center; }
 #chatBubble { position: fixed; z-index: 45; left: 50%; transform: translateX(-50%); top: calc(64px + env(safe-area-inset-top, 0px)); max-width: calc(100% - 32px); padding: 8px 14px; border-radius: 12px; background: #2a1a05; color: #f7e2b5; border: 1px solid var(--brass); font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
 @media (max-width: 860px) {
   /* no celular a conversa vira uma gaveta que sobe de baixo */
   body.in-game .side { display: block; height: 0; overflow: visible; }
+  body.in-game .game { gap: 0; }
   body.in-game .side > :not(.chat-panel) { display: none; }
-  body.in-game .board > .tablebar .chat-toggle { display: inline-block; }
+  body.in-game .board > .tablebar [data-ptt], body.in-game .board > .tablebar .chat-toggle { display: none; }
+  body.in-game .mtools { display: flex; }
+  body.in-game .board > .tablebar [data-leave] { margin-left: auto; }
   .chat-panel { position: fixed; z-index: 40; left: 0; right: 0; bottom: 0; border-radius: 16px 16px 0 0; max-height: 62dvh; padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px)); padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); box-shadow: 0 -12px 40px rgba(0,0,0,.55); transform: translateY(110%); visibility: hidden; transition: transform .2s ease, visibility .2s; }
   body.chat-open .chat-panel { transform: none; visibility: visible; }
   .chat-close { display: inline-block; }
@@ -2033,6 +2039,7 @@ function render() {
       <div class="mesa ${st.n === 6 ? 'six' : ''}">${seatsHtml}${playedHtml}${lastTrick}${banner}
         ${seated ? (() => { const p = pos(me, [40, 40]); return `<div class="seat us me ${me === actor ? 'turn' : ''}" data-key="${esc(st.seats[me] || '')}" style="left:${p.x}%;top:${Math.min(p.y, 90)}%">${avatarHtml(st.seats[me], nick(st, me))}<span class="name">${esc(nick(st, me))} (você)</span></div>`; })() : ''}
       </div>
+      ${solo ? '' : `<div class="mtools">${voiceOK() && canChat() ? '<button type="button" class="ptt round" data-ptt aria-label="Segure para falar com a mesa">🎤</button>' : ''}<button type="button" class="chat-toggle round" data-chatopen aria-label="Abrir conversa">💬${chatUnread ? `<span class="badge">${chatUnread}</span>` : ''}</button></div>`}
       <div class="actions"><p class="msg">${!solo && currentActor(st) >= 0 && st.turnAt ? `<span id="clock" class="clock ${timeLeft(st) <= 5 ? 'low' : ''}">${timeLeft(st)}s</span> ` : ''}${msg}</p><div class="row" style="justify-content:center">${btns}</div></div>
       ${handHtml}
       ${partnerHtml}
