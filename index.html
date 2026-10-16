@@ -412,14 +412,17 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 4px; color
 .music button.off { opacity: .55; filter: grayscale(1); }
 /* painel do som: abre ao tocar no 🎵 */
 .music { align-items: center; }
-.music .vol { position: absolute; left: 0; bottom: 50px; width: 230px; box-sizing: border-box; padding: 12px 14px; border-radius: 12px; background: #0f3326; border: 1px solid var(--line); box-shadow: 0 10px 30px rgba(0,0,0,.55); display: grid; gap: 10px; z-index: 50; }
+.music .vol { position: absolute; left: 0; bottom: 50px; width: min(290px, calc(100vw - 24px)); box-sizing: border-box; padding: 12px 14px; border-radius: 12px; background: #0f3326; border: 1px solid var(--line); box-shadow: 0 10px 30px rgba(0,0,0,.55); display: grid; gap: 4px; z-index: 50; }
 .music .vol[hidden] { display: none; }
-.music .vol h4 { margin: 0; font-size: 13px; letter-spacing: .5px; text-transform: uppercase; color: var(--muted); }
-.music .vol .vrow { display: flex; align-items: center; gap: 10px; }
-.music .vol input[type=range] { flex: 1 1 0; width: auto; accent-color: var(--brass); min-width: 0; height: 28px; padding: 0; border: 0; background: none; }
-.music .vol .pct { width: 38px; text-align: right; font-weight: 800; font-variant-numeric: tabular-nums; font-size: 14px; }
-.music .vol .onoff { width: auto; height: 34px; border-radius: 99px; padding: 0 14px; font-size: 14px; font-weight: 800; box-shadow: none; opacity: 1; filter: none; }
-.music .vol .onoff.on { background: var(--brass); color: #1d1a14; border-color: var(--brass); }
+.music .vol h4 { margin: 0 0 4px; font-size: 13px; letter-spacing: .5px; text-transform: uppercase; color: var(--muted); }
+.music .vol .vrow { display: grid; grid-template-columns: 34px 58px minmax(0, 1fr) 40px; align-items: center; gap: 8px; }
+.music .vol .vrow.ch-master { padding-bottom: 6px; margin-bottom: 4px; border-bottom: 1px solid var(--line); }
+.music .vol .lbl { font-size: 14px; font-weight: 700; }
+.music .vol input[type=range] { width: 100%; accent-color: var(--brass); min-width: 0; height: 30px; padding: 0; margin: 0; border: 0; background: none; }
+.music .vol input[type=range]:disabled { opacity: .35; }
+.music .vol .pct { text-align: right; font-weight: 800; font-variant-numeric: tabular-nums; font-size: 13px; }
+.music .vol .mute { width: 34px; height: 34px; font-size: 15px; box-shadow: none; opacity: 1; filter: none; }
+.music .vol .mute.muted { background: var(--red); border-color: var(--red); }
 /* durante a partida o botão fica na barra da mesa, para não cobrir as cartas */
 .tablebar .music { position: static; gap: 4px; }
 .tablebar .music button.tog { width: 32px; height: 32px; font-size: 14px; box-shadow: none; }
@@ -1707,6 +1710,7 @@ function stopVoice() {
 function closePeer(p) {
   p.closed = true; clearTimeout(p.retryT);
   try { p.pc.close(); } catch {}
+  try { if (p.vsrc) p.vsrc.disconnect(); } catch {}
   if (p.audio) p.audio.remove();
 }
 
@@ -1739,8 +1743,10 @@ function newPeer(key) {
   const p = { pc, key, state: 'conectando', tries: 0 };
   pc.ontrack = e => {
     if (!p.audio) { p.audio = document.createElement('audio'); p.audio.autoplay = true; p.audio.playsInline = true; p.audio.setAttribute('playsinline', ''); document.body.appendChild(p.audio); }
-    p.audio.srcObject = e.streams[0] || new MediaStream([e.track]);
+    p.stream = e.streams[0] || new MediaStream([e.track]);
+    p.audio.srcObject = p.stream;
     p.audio.play().catch(() => {});
+    applyVoiceVolume();
   };
   pc.onconnectionstatechange = () => {
     p.state = { connected: 'conectado', failed: 'falhou', disconnected: 'caiu', closed: 'fechado' }[pc.connectionState] || 'conectando';
@@ -1846,82 +1852,102 @@ function applyTalking() {
   });
 }
 
-/* ---------------- SOM DE VIOLA DE FUNDO ----------------
-   Um trecho de viola em loop (arquivo viola.mp3, ao lado do site).
-   Tocar no 🎵 abre o painel: liga/desliga e volume. Cada pessoa escolhe no
-   próprio aparelho e o jogo lembra. O volume passa pelo controle de áudio
+/* ---------------- SOM DO JOGO ----------------
+   Painel do 🔊 (saguão e mesa): volume geral, viola de fundo, som das cartas e
+   voz da mesa, cada um com barra e botão de silenciar. Cada pessoa ajusta no
+   próprio aparelho e o jogo lembra. Os volumes passam pelo controle de áudio
    porque o iPhone ignora o volume normal da página. */
 const MUSIC_SRC = 'viola.mp3';
-const MUSIC_MAX = 0.2;     // volume no 100%
-const MUSIC_DEFAULT = 30;  // começa em 30%
-const music = { box: null, ctx: null, gain: null, el: null, on: true, vol: MUSIC_DEFAULT };
+const MUSIC_MAX = 0.2;   // viola no 100%
+const SFX_MAX = 0.09;    // cartas no 100%
+const SND_CH = [['master', 'Geral'], ['music', 'Viola'], ['sfx', 'Cartas'], ['voice', 'Voz']];
+const snd = { master: 100, music: 30, sfx: 55, voice: 100, mute: { master: false, music: false, sfx: false, voice: false } };
 try {
-  music.on = localStorage.getItem('truco.musica') !== 'off';
-  const v = parseInt(localStorage.getItem('truco.volume'), 10);
-  if (v >= 0 && v <= 100) music.vol = v;
+  const s = JSON.parse(localStorage.getItem('truco.som') || 'null');
+  if (s) { for (const [k] of SND_CH) if (s[k] >= 0 && s[k] <= 100) snd[k] = s[k]; Object.assign(snd.mute, s.mute || {}); }
+  else { // ajustes antigos (antes do painel completo)
+    if (localStorage.getItem('truco.musica') === 'off') snd.mute.music = true;
+    if (localStorage.getItem('truco.efeitos') === 'off') snd.mute.sfx = true;
+    const v = parseInt(localStorage.getItem('truco.volume'), 10); if (v >= 0 && v <= 100) snd.music = v;
+  }
 } catch {}
-// a curva é quadrática: o começo da barra fica mais fino, que é onde o ouvido nota diferença
-const musicLevel = () => MUSIC_MAX * (music.vol / 100) ** 2;
+const saveSnd = () => { try { localStorage.setItem('truco.som', JSON.stringify(snd)); } catch {} };
+// nível de 0 a 1 de um canal, já com o geral; a curva é quadrática porque o ouvido nota mais diferença no começo
+const sndLevel = ch => (snd.mute.master || snd.mute[ch] ? 0 : ((snd.master / 100) * (snd[ch] / 100)) ** 2);
+const music = { box: null, ctx: null, gain: null, el: null };
+const musicLevel = () => MUSIC_MAX * sndLevel('music');
 function initMusic() {
   const AC = window.AudioContext || window.webkitAudioContext;
   if (!AC || (window.claude && !localMode)) return;
   const box = music.box = document.createElement('div'); box.className = 'music';
-  box.innerHTML = `<button type="button" class="tog" aria-label="Som" aria-expanded="false" aria-controls="volPanel">🎵</button>
+  box.innerHTML = `<button type="button" class="tog" aria-label="Som" aria-expanded="false" aria-controls="volPanel">🔊</button>
     <div class="vol" id="volPanel" hidden>
-      <h4>Som de viola</h4>
-      <div class="vrow"><button type="button" class="onoff"></button></div>
-      <div class="vrow"><span aria-hidden="true">🔈</span><input type="range" min="0" max="100" step="5" aria-label="Volume da viola"><span class="pct"></span></div>
-      <h4>Som das cartas</h4>
-      <div class="vrow"><button type="button" class="onoff sfx"></button></div>
+      <h4>Som</h4>
+      ${SND_CH.map(([k, name]) => `<div class="vrow ch-${k}">
+        <button type="button" class="mute" data-mute="${k}"></button>
+        <span class="lbl">${name}</span>
+        <input type="range" min="0" max="100" step="5" data-vol="${k}" aria-label="Volume: ${name}">
+        <span class="pct" data-pct="${k}"></span>
+      </div>`).join('')}
     </div>`;
   document.body.appendChild(box);
-  const pop = box.querySelector('.vol'), tog = box.querySelector('.tog'), range = box.querySelector('input');
+  const pop = box.querySelector('.vol'), tog = box.querySelector('.tog');
   const openPop = open => { pop.hidden = !open; tog.setAttribute('aria-expanded', String(open)); };
   tog.onclick = e => { e.stopPropagation(); openPop(pop.hidden); };
-  box.querySelector('.onoff:not(.sfx)').onclick = e => { e.stopPropagation(); setMusic(!music.on); };
-  box.querySelector('.onoff.sfx').onclick = e => { e.stopPropagation(); setSfx(!sfx.on); };
-  range.value = music.vol;
-  range.oninput = () => {
-    music.vol = +range.value;
-    try { localStorage.setItem('truco.volume', String(music.vol)); } catch {}
-    if (music.vol > 0 && !music.on) setMusic(true);
-    applyMusicVolume(); paintMusic();
-  };
+  box.querySelectorAll('[data-mute]').forEach(b => (b.onclick = e => {
+    e.stopPropagation();
+    const k = b.dataset.mute; snd.mute[k] = !snd.mute[k];
+    saveSnd(); soundChanged(k);
+  }));
+  box.querySelectorAll('[data-vol]').forEach(r => {
+    r.value = snd[r.dataset.vol];
+    r.oninput = () => {
+      const k = r.dataset.vol; snd[k] = +r.value;
+      if (snd[k] > 0) snd.mute[k] = false;   // mexeu na barra: tira do silêncio
+      saveSnd(); soundChanged(k, true);
+    };
+    r.onchange = () => { if (r.dataset.vol === 'sfx' || r.dataset.vol === 'master') cardSound(); }; // amostra ao soltar
+  });
   pop.onpointerdown = e => e.stopPropagation();
   // tocar fora fecha o painel
   document.addEventListener('pointerdown', e => { if (!box.contains(e.target)) openPop(false); });
   document.addEventListener('keydown', e => { if (e.key === 'Escape') openPop(false); });
-  paintMusic();
+  paintSound();
   // o navegador só deixa tocar som depois do primeiro toque na tela
-  const kick = () => { if (music.on) playMusic(); };
+  const kick = () => { if (musicLevel() > 0) playMusic(); };
   document.addEventListener('pointerdown', kick, { once: true, capture: true });
   document.addEventListener('keydown', kick, { once: true, capture: true });
   setInterval(() => { applyMusicVolume(); placeMusic(); }, 400);
 }
-function setMusic(on) {
-  music.on = on;
-  try { localStorage.setItem('truco.musica', on ? 'on' : 'off'); } catch {}
-  if (on) playMusic(); else if (music.el) music.el.pause();
-  paintMusic();
+function soundChanged(k, fromSlider) {
+  if (musicLevel() > 0) playMusic(); else if (music.el) music.el.pause();
+  applyMusicVolume(); applyVoiceVolume();
+  if (!fromSlider && (k === 'sfx' || k === 'master')) cardSound();
+  paintSound();
 }
-function paintMusic() {
+function paintSound() {
   const box = music.box; if (!box) return;
-  const tog = box.querySelector('.tog'), oo = box.querySelector('.onoff:not(.sfx)'), fx = box.querySelector('.onoff.sfx');
-  fx.textContent = sfx.on ? 'Ligado' : 'Desligado';
-  fx.classList.toggle('on', sfx.on);
-  fx.setAttribute('aria-pressed', String(sfx.on));
-  tog.classList.toggle('off', !music.on || !music.vol);
-  tog.title = 'Som de viola: ' + (music.on ? music.vol + '%' : 'desligado');
-  oo.textContent = music.on ? 'Ligado' : 'Desligado';
-  oo.classList.toggle('on', music.on);
-  oo.setAttribute('aria-pressed', String(music.on));
-  box.querySelector('.pct').textContent = music.vol + '%';
+  const tog = box.querySelector('.tog');
+  const allOff = snd.mute.master || !snd.master;
+  tog.textContent = allOff ? '🔇' : '🔊';
+  tog.classList.toggle('off', allOff);
+  for (const [k, name] of SND_CH) {
+    const m = box.querySelector(`[data-mute="${k}"]`), off = snd.mute[k] || !snd[k];
+    m.textContent = off ? '🔇' : '🔊';
+    m.classList.toggle('muted', off);
+    m.setAttribute('aria-label', (off ? 'Ligar ' : 'Silenciar ') + name.toLowerCase());
+    m.setAttribute('aria-pressed', String(!!snd.mute[k]));
+    box.querySelector(`[data-pct="${k}"]`).textContent = snd.mute[k] ? '—' : snd[k] + '%';
+    const r = box.querySelector(`[data-vol="${k}"]`);
+    if (+r.value !== snd[k]) r.value = snd[k];
+    r.classList.toggle('dim', snd.mute[k]);
+  }
 }
 function playMusic() {
   if (!music.el) {
     const el = music.el = new Audio(MUSIC_SRC);
     el.loop = true; el.preload = 'auto'; el.setAttribute('playsinline', '');
-    el.onerror = () => { if (music.box) music.box.hidden = true; }; // sem o arquivo, some o botão
+    el.onerror = () => { const r = music.box && music.box.querySelector('.vrow.ch-music'); if (r) r.hidden = true; }; // sem o arquivo, some a linha da viola
     try {
       const AC = window.AudioContext || window.webkitAudioContext;
       music.ctx = new AC();
@@ -1938,6 +1964,32 @@ function applyMusicVolume() {
   const talking = pttDown || !!(vz && Object.values(vz.talking).some(Boolean));
   const v = musicLevel() * (talking ? 0.3 : 1);
   if (music.gain) music.gain.gain.setTargetAtTime(v, music.ctx.currentTime, 0.08); else music.el.volume = Math.min(1, v);
+}
+// voz da mesa: no Android/PC o volume do próprio áudio funciona; no iPhone ele é
+// ignorado, então lá o som da voz passa por um controle de volume do jogo
+const volumeLocked = (() => { try { const a = new Audio(); a.volume = 0.5; return a.volume !== 0.5; } catch { return false; } })();
+function applyVoiceVolume() {
+  if (!vz) return;
+  const lv = sndLevel('voice');
+  for (const k in vz.peers) {
+    const p = vz.peers[k]; if (!p.audio) continue;
+    if (!volumeLocked || lv === 0 || lv === 1 || !p.stream) {
+      p.audio.muted = lv === 0;
+      if (!volumeLocked) p.audio.volume = lv;
+      if (p.vgain) p.vgain.gain.value = 0;
+      continue;
+    }
+    if (!sfxReady() && !sfx.ctx) { p.audio.muted = false; continue; }
+    if (!p.vgain) {
+      try {
+        p.vsrc = sfx.ctx.createMediaStreamSource(p.stream);
+        p.vgain = sfx.ctx.createGain();
+        p.vsrc.connect(p.vgain).connect(sfx.ctx.destination);
+      } catch { p.audio.muted = false; continue; }
+    }
+    p.audio.muted = true;
+    p.vgain.gain.value = lv;
+  }
 }
 // na partida vai para a barra da mesa (logo depois do nome da mesa); fora dela, canto da tela
 function placeMusic() {
@@ -2875,17 +2927,22 @@ function shout(text, sub, kind) {
   ], { duration: ms, fill: 'both' });
 }
 
-/* Som de carta deslizando no pano: um chiado curto e baixinho, feito na hora
-   (ruído filtrado), sem arquivo. Liga/desliga no painel do 🎵. */
-const sfx = { ctx: null, noise: null, on: true };
-try { sfx.on = localStorage.getItem('truco.efeitos') !== 'off'; } catch {}
+/* Som de carta deslizando no pano: um chiado curto de atrito, feito na hora
+   (ruído filtrado), sem arquivo. O volume vem do painel do 🔊. */
+const sfx = { ctx: null, noise: null };
 function sfxReady() {
   if (sfx.ctx) return sfx.ctx.state === 'running';
   const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return false;
   try {
     sfx.ctx = new AC();
-    const n = Math.floor(sfx.ctx.sampleRate * 0.5), b = sfx.ctx.createBuffer(1, n, sfx.ctx.sampleRate), d = b.getChannelData(0);
-    for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+    // ruído "rosado" (mais macio que o branco), parecido com papel no feltro
+    const sr = sfx.ctx.sampleRate, n = Math.floor(sr * 0.6), b = sfx.ctx.createBuffer(1, n, sr), d = b.getChannelData(0);
+    let b0 = 0, b1 = 0, b2 = 0;
+    for (let i = 0; i < n; i++) {
+      const w = Math.random() * 2 - 1;
+      b0 = 0.99765 * b0 + w * 0.099; b1 = 0.963 * b1 + w * 0.2965; b2 = 0.57 * b2 + w * 1.0526;
+      d[i] = (b0 + b1 + b2 + w * 0.1848) * 0.2;
+    }
     sfx.noise = b;
   } catch { sfx.ctx = null; return false; }
   return sfx.ctx.state === 'running';
@@ -2893,27 +2950,30 @@ function sfxReady() {
 // o navegador só libera som depois de um toque na tela
 document.addEventListener('pointerdown', () => { sfxReady(); if (sfx.ctx && sfx.ctx.state === 'suspended') sfx.ctx.resume().catch(() => {}); }, { capture: true });
 function cardSound(level = 1) {
-  if (!sfx.on || !sfxReady()) return;
-  const c = sfx.ctx, t = c.currentTime + 0.01, dur = 0.16 + Math.random() * 0.05;
-  const src = c.createBufferSource(); src.buffer = sfx.noise;
-  const bp = c.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 0.9;
-  bp.frequency.setValueAtTime(3200 + Math.random() * 600, t);
-  bp.frequency.exponentialRampToValueAtTime(900, t + dur);       // o chiado "desce" como papel no pano
-  const hp = c.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 500;
-  const g = c.createGain();
-  const peak = 0.05 * level;                                       // bem baixo
-  g.gain.setValueAtTime(0.0001, t);
-  g.gain.exponentialRampToValueAtTime(peak, t + 0.018);
-  g.gain.exponentialRampToValueAtTime(peak * 0.35, t + dur * 0.6);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  src.connect(bp).connect(hp).connect(g).connect(c.destination);
-  src.start(t, Math.random() * 0.3, dur + 0.02);
+  const vol = SFX_MAX * sndLevel('sfx') * level;
+  if (!vol || !sfxReady()) return;
+  slideSound(sfx.ctx, sfx.ctx.currentTime + 0.01, vol);
 }
-function setSfx(on) {
-  sfx.on = on;
-  try { localStorage.setItem('truco.efeitos', on ? 'on' : 'off'); } catch {}
-  if (on) cardSound();
-  paintMusic();
+// Só o "chhh" da carta escorregando: o volume sobe e desce numa curva lisa
+// (sem cantos), e o som acaba em silêncio total antes de parar, sem estalo.
+function slideSound(c, t, vol) {
+  const dur = 0.2 + Math.random() * 0.05;
+  const src = c.createBufferSource(); src.buffer = sfx.noise;
+  const hp = c.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 900; hp.Q.value = 0.5;
+  const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 5200; lp.Q.value = 0.5;
+  const g = c.createGain();
+  const N = 96, curve = new Float32Array(N), peak = 0.32; // sobe em 1/3 do tempo, desce nos outros 2/3
+  for (let i = 0; i < N; i++) {
+    const x = i / (N - 1);
+    const y = x < peak ? Math.sin((x / peak) * Math.PI / 2) : Math.cos(((x - peak) / (1 - peak)) * Math.PI / 2);
+    curve[i] = vol * y * y;
+  }
+  curve[N - 1] = 0;
+  g.gain.value = 0;
+  g.gain.setValueCurveAtTime(curve, t, dur);
+  src.connect(hp).connect(lp).connect(g).connect(c.destination);
+  src.start(t, Math.random() * 0.3);
+  src.stop(t + dur + 0.08);   // para só depois de já estar em silêncio
 }
 
 function act(a, me = mySeat()) {
