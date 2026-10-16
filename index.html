@@ -395,6 +395,15 @@ ul.paid { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 4px; }
 details summary { cursor: pointer; font-weight: 800; }
 details ul { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 4px; color: var(--muted); font-size: 14px; }
 #toast { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: #2a1a05; color: #f7e2b5; border: 1px solid var(--brass); padding: 10px 16px; border-radius: 10px; font-weight: 600; max-width: calc(100% - 32px); }
+/* música de fundo: botão redondo fixo no canto de baixo à esquerda */
+.music { position: fixed; z-index: 30; left: max(12px, env(safe-area-inset-left, 0px)); bottom: calc(12px + env(safe-area-inset-bottom, 0px)); display: flex; gap: 6px; }
+.music[hidden] { display: none; }
+.music button { width: 40px; height: 40px; padding: 0; border-radius: 50%; display: grid; place-items: center; font-size: 17px; background: #164a37; border: 1px solid var(--line); box-shadow: 0 4px 12px rgba(0,0,0,.45); opacity: .85; }
+.music button.off { opacity: .55; filter: grayscale(1); }
+/* durante a partida o botão fica na barra da mesa, para não cobrir as cartas */
+.tablebar .music { position: static; gap: 4px; }
+.tablebar .music button { width: 32px; height: 32px; font-size: 14px; box-shadow: none; }
+@media (hover: hover) { .music button:hover { opacity: 1; } }
 </style>
 </head>
 <body>
@@ -1584,6 +1593,7 @@ function saveChatDraft() {
   if (i) { chatDraft = i.value; chatHadFocus = document.activeElement === i; }
 }
 function bindChat() {
+  if (typeof placeMusic === 'function') placeMusic();
   const f = document.getElementById('chatForm'), i = document.getElementById('chatInput');
   if (i) { i.value = chatDraft; if (chatHadFocus && !i.disabled) i.focus(); i.oninput = () => (chatDraft = i.value); }
   if (f) f.onsubmit = e => { e.preventDefault(); sendChatText(); };
@@ -1812,6 +1822,81 @@ function applyTalking() {
     el.classList.toggle('talking', k === myId ? pttDown : !!(vz && vz.talking[k]));
   });
 }
+
+/* ---------------- SOM DE VIOLA DE FUNDO ----------------
+   Um trecho de viola em loop, bem baixinho (arquivo viola.mp3, ao lado do site).
+   Cada pessoa liga ou desliga no próprio aparelho; o jogo lembra a escolha.
+   O volume passa pelo controle de áudio porque o iPhone ignora o volume normal,
+   e o loop é feito por ele também, para não ter emenda. */
+const MUSIC_SRC = 'viola.mp3';
+const MUSIC_VOL = 0.07, MUSIC_DUCK = 0.02; // abaixa ainda mais enquanto alguém fala na voz
+const music = { box: null, ctx: null, gain: null, buf: null, src: null, on: true, loading: false };
+try { music.on = localStorage.getItem('truco.musica') !== 'off'; } catch {}
+function initMusic() {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC || (window.claude && !localMode)) return;
+  const box = music.box = document.createElement('div'); box.className = 'music';
+  box.innerHTML = '<button type="button" class="tog" aria-label="Som de viola de fundo">🎵</button>';
+  document.body.appendChild(box);
+  box.querySelector('.tog').onclick = e => { e.stopPropagation(); setMusic(!music.on); };
+  paintMusic();
+  // o navegador só deixa tocar som depois do primeiro toque na tela
+  const kick = () => { if (music.on) playMusic(); };
+  document.addEventListener('pointerdown', kick, { once: true, capture: true });
+  document.addEventListener('keydown', kick, { once: true, capture: true });
+  setInterval(() => { duckMusic(); placeMusic(); }, 400);
+}
+function setMusic(on) {
+  music.on = on;
+  try { localStorage.setItem('truco.musica', on ? 'on' : 'off'); } catch {}
+  if (on) playMusic(); else if (music.ctx) music.ctx.suspend().catch(() => {});
+  paintMusic();
+}
+function paintMusic() {
+  const b = music.box && music.box.querySelector('.tog');
+  if (!b) return;
+  b.classList.toggle('off', !music.on);
+  b.setAttribute('aria-pressed', music.on ? 'true' : 'false');
+  b.title = music.on ? 'Desligar o som de viola' : 'Ligar o som de viola';
+}
+async function playMusic() {
+  try {
+    if (!music.ctx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      music.ctx = new AC();
+      music.gain = music.ctx.createGain(); music.gain.gain.value = MUSIC_VOL;
+      music.gain.connect(music.ctx.destination);
+    }
+    if (music.ctx.state === 'suspended') music.ctx.resume().catch(() => {});
+    if (music.src || music.loading) return;
+    music.loading = true;
+    if (!music.buf) {
+      const r = await fetch(MUSIC_SRC);
+      if (!r.ok) throw new Error('sem arquivo');
+      const data = await r.arrayBuffer();
+      // o iPhone antigo só aceita o jeito com funções de retorno
+      music.buf = await new Promise((ok, bad) => { const p = music.ctx.decodeAudioData(data, ok, bad); if (p && p.catch) p.catch(() => {}); });
+    }
+    const s = music.src = music.ctx.createBufferSource();
+    s.buffer = music.buf; s.loop = true; s.connect(music.gain); s.start();
+    if (!music.on) music.ctx.suspend().catch(() => {});
+  } catch { if (music.box) music.box.hidden = true; } // sem o arquivo, some o botão
+  finally { music.loading = false; }
+}
+function duckMusic() {
+  if (!music.gain) return;
+  const talking = pttDown || !!(vz && Object.values(vz.talking).some(Boolean));
+  music.gain.gain.setTargetAtTime(talking ? MUSIC_DUCK : MUSIC_VOL, music.ctx.currentTime, 0.15);
+}
+// na partida vai para a barra da mesa (logo depois do nome da mesa); fora dela, canto da tela
+function placeMusic() {
+  const box = music.box; if (!box) return;
+  const bar = document.body.classList.contains('in-game') && document.querySelector('.board > .tablebar');
+  if (bar) {
+    if (box.parentNode !== bar) bar.insertBefore(box, bar.querySelector('button'));
+  } else if (box.parentNode !== document.body) document.body.appendChild(box);
+}
+initMusic();
 
 // ---- apagar a conversa (e o aperto de mão da voz) no fim da partida ----
 async function clearChat(c) {
