@@ -412,6 +412,7 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 4px; color
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="firebase-config.js"></script>
+<script src="voz-config.js"></script>
 <script>
 /* =========================================================
    REGRAS — Truco Paulista (baralho de 40 cartas, com vira)
@@ -1622,7 +1623,25 @@ async function sendChatText() {
 /* ---------------- VOZ AO VIVO ----------------
    Cada par de jogadores abre uma ligação direta. Quem tem o nome "menor" chama,
    o outro atende. O microfone só manda som enquanto o botão está apertado. */
-const ICE_SERVERS = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }, ...(window.TURN_SERVERS || [])];
+const STUN = { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] };
+// TURN = servidor de retransmissão. Sem ele, dois celulares no 4G/5G quase nunca se acham.
+// Configure em voz-config.js (window.TURN_CREDENTIALS_URL ou window.TURN_SERVERS).
+let iceCache = null;
+async function getIceServers() {
+  if (iceCache && Date.now() - iceCache.at < 6 * 3600e3) return iceCache.list;
+  let extra = Array.isArray(window.TURN_SERVERS) ? window.TURN_SERVERS.slice() : [];
+  if (window.TURN_CREDENTIALS_URL) {
+    try {
+      const r = await fetch(window.TURN_CREDENTIALS_URL);
+      const j = await r.json();
+      extra = extra.concat(Array.isArray(j) ? j : (j.iceServers || []));
+    } catch {}
+  }
+  const list = [STUN, ...extra];
+  iceCache = { at: Date.now(), list, hasTurn: extra.some(s => [].concat(s.urls || s.url || []).some(u => /^turns?:/.test(u))) };
+  return list;
+}
+const hasTurn = () => !!(iceCache && iceCache.hasTurn);
 const voiceOK = () => !!(window.RTCPeerConnection && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) && (localMode || !window.claude);
 let vz = null;          // { code, session, peers: {key: {pc, offerId, remoteSession, audio, answered}}, talking: {}, unsub }
 let micStream = null, micTrack = null, pttDown = false, pttPressedAt = 0, micReleasedAt = 0;
@@ -1633,9 +1652,13 @@ function writeVoz(id, body) { return db.collection('voz').doc(id).set({ table: v
 function startVoice(c) {
   stopVoice();
   if (!voiceOK() || solo || !db || !account || mySeat() < 0) return;
-  vz = { code: c, session: rid(), peers: {}, talking: {} };
-  writeVoz(vozId(myId), { kind: 'hello', session: vz.session, talking: false });
-  vz.unsub = db.collection('voz').where('table', '==', c).onSnapshot(snap => onVozDocs(snap.docs.map(d => ({ id: d.id, ...d.data() }))), () => {});
+  const v = vz = { code: c, session: rid(), peers: {}, talking: {}, ice: [STUN] };
+  getIceServers().then(list => {
+    if (vz !== v) return;
+    v.ice = list;
+    writeVoz(vozId(myId), { kind: 'hello', session: v.session, talking: false });
+    v.unsub = db.collection('voz').where('table', '==', c).onSnapshot(snap => onVozDocs(snap.docs.map(d => ({ id: d.id, ...d.data() }))), () => {});
+  });
 }
 function stopVoice() {
   pttRelease();
@@ -1649,6 +1672,7 @@ function stopVoice() {
   db.collection('voz').where('table', '==', v.code).get().then(s => s.docs.forEach(d => { if (d.data().from === myId) db.collection('voz').doc(d.id).delete().catch(() => {}); })).catch(() => {});
 }
 function closePeer(p) {
+  p.closed = true; clearTimeout(p.retryT);
   try { p.pc.close(); } catch {}
   if (p.audio) p.audio.remove();
 }
@@ -1678,8 +1702,8 @@ function onVozDocs(docs) {
 }
 
 function newPeer(key) {
-  const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
-  const p = { pc, key, state: 'conectando' };
+  const pc = new RTCPeerConnection({ iceServers: vz.ice });
+  const p = { pc, key, state: 'conectando', tries: 0 };
   pc.ontrack = e => {
     if (!p.audio) { p.audio = document.createElement('audio'); p.audio.autoplay = true; p.audio.playsInline = true; p.audio.setAttribute('playsinline', ''); document.body.appendChild(p.audio); }
     p.audio.srcObject = e.streams[0] || new MediaStream([e.track]);
@@ -1687,19 +1711,28 @@ function newPeer(key) {
   };
   pc.onconnectionstatechange = () => {
     p.state = { connected: 'conectado', failed: 'falhou', disconnected: 'caiu', closed: 'fechado' }[pc.connectionState] || 'conectando';
+    if (p.state === 'conectado') p.tries = 0;
+    clearTimeout(p.retryT);
+    // quem chama tenta de novo (até 3 vezes); "caiu" espera 5s porque às vezes volta sozinho
+    if ((p.state === 'falhou' || p.state === 'caiu') && myId < key && p.tries < 3) {
+      p.retryT = setTimeout(() => {
+        if (p.closed || !vz || vz.peers[key] !== p || p.state === 'conectado') return;
+        makeOffer(key, p.remoteSession, p.tries + 1);
+      }, p.state === 'caiu' ? 5000 : 1500);
+    }
     renderChat();
   };
   return p;
 }
 const waitIce = pc => new Promise(res => {
   if (pc.iceGatheringState === 'complete') return res();
-  const t = setTimeout(res, 2500);
+  const t = setTimeout(res, 4000);
   pc.addEventListener('icegatheringstatechange', () => { if (pc.iceGatheringState === 'complete') { clearTimeout(t); res(); } });
 });
-async function makeOffer(to, remoteSession) {
+async function makeOffer(to, remoteSession, tries = 0) {
   if (vz.peers[to]) closePeer(vz.peers[to]);
   const p = newPeer(to);
-  p.offerId = rid(); p.remoteSession = remoteSession;
+  p.offerId = rid(); p.remoteSession = remoteSession; p.tries = tries;
   vz.peers[to] = p;
   const tr = p.pc.addTransceiver('audio', { direction: 'sendrecv' });
   if (micTrack) tr.sender.replaceTrack(micTrack);
@@ -1732,6 +1765,7 @@ async function ensureMic() {
   } catch { toast('Libere o microfone para falar (nas permissões do navegador).'); return false; }
   micTrack = micStream.getAudioTracks()[0];
   micTrack.enabled = false;
+  if (vz) for (const k in vz.peers) vz.peers[k].audio?.play().catch(() => {});
   if (vz) for (const k in vz.peers) { const tr = vz.peers[k].pc.getTransceivers()[0]; if (tr) tr.sender.replaceTrack(micTrack).catch(() => {}); }
   return true;
 }
@@ -1768,7 +1802,7 @@ function voiceStatusText() {
   const bad = ps.filter(p => p.state === 'falhou' || p.state === 'caiu');
   const ok = ps.filter(p => p.state === 'conectado');
   let t = ok.length ? `Voz conectada com ${ok.map(p => name(p.key)).join(', ')}.` : 'Voz: conectando…';
-  if (bad.length) t += ` Não conectou com ${bad.map(p => name(p.key)).join(', ')} (no 4G/5G às vezes não conecta; no Wi-Fi costuma funcionar).`;
+  if (bad.length) t += ` Não conectou com ${bad.map(p => name(p.key)).join(', ')}` + (hasTurn() ? ' (tentando de novo…).' : ' (no 4G/5G precisa do servidor de retransmissão; no mesmo Wi-Fi costuma funcionar).');
   return t + ' Segure 🎤 Falar para falar.';
 }
 // quem está falando ganha destaque na mesa
