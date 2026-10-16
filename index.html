@@ -120,7 +120,7 @@ main#app { display: grid; gap: 18px; min-width: 0; }
 .pip.tie { background: #6f8b7d; border-color: #6f8b7d; }
 
 .mesa {
-  position: relative; width: 100%; aspect-ratio: 16 / 10; border-radius: 48% / 46%;
+  position: relative; width: 100%; contain: layout paint; aspect-ratio: 16 / 10; border-radius: 48% / 46%;
   background: radial-gradient(ellipse at 50% 40%, #1b5a42 0%, var(--felt) 45%, var(--felt-deep) 100%);
   border: 14px solid var(--wood);
   box-shadow: inset 0 0 0 3px var(--wood-light), inset 0 0 60px rgba(0,0,0,.55), 0 14px 40px rgba(0,0,0,.5);
@@ -157,8 +157,13 @@ main#app { display: grid; gap: 18px; min-width: 0; }
   font-family: var(--display); font-size: clamp(24px, 6vw, 46px); color: #fff3e6; background: var(--red);
   padding: 4px 18px; border-radius: 8px; box-shadow: 0 8px 22px rgba(0,0,0,.5); white-space: nowrap; pointer-events: none;
 }
-@media (prefers-reduced-motion: no-preference) { .banner { animation: pop .35s ease-out; } }
-@keyframes pop { from { transform: translate(-50%, -50%) rotate(-4deg) scale(.6); opacity: 0; } }
+/* carimbo grande do truco: fica por cima da tela toda e some sozinho */
+.stamp { position: fixed; z-index: 60; left: 50%; top: 42%; transform: translate(-50%, -50%) rotate(-8deg); pointer-events: none;
+  font-family: var(--display); font-size: clamp(56px, 17vw, 128px); line-height: 1; color: #fff3e6; background: var(--red);
+  padding: 10px 30px 14px; border-radius: 14px; border: 4px solid #fff3e6; box-shadow: 0 18px 50px rgba(0,0,0,.6); white-space: nowrap; text-align: center; }
+.stamp small { display: block; font-family: Figtree, system-ui, sans-serif; font-weight: 800; font-size: .2em; letter-spacing: 1px; margin-top: 4px; }
+.stamp.ok { background: #1f7a4d; }
+.stamp.run { background: #4a3a2a; }
 
 /* ---- tela de jogo: tudo cabe numa tela ---- */
 .tablebar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -400,9 +405,21 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 4px; color
 .music[hidden] { display: none; }
 .music button { width: 40px; height: 40px; padding: 0; border-radius: 50%; display: grid; place-items: center; font-size: 17px; background: #164a37; border: 1px solid var(--line); box-shadow: 0 4px 12px rgba(0,0,0,.45); opacity: .85; }
 .music button.off { opacity: .55; filter: grayscale(1); }
+/* painel do som: abre ao tocar no 🎵 */
+.music { align-items: center; }
+.music .vol { position: absolute; left: 0; bottom: 50px; width: 230px; box-sizing: border-box; padding: 12px 14px; border-radius: 12px; background: #0f3326; border: 1px solid var(--line); box-shadow: 0 10px 30px rgba(0,0,0,.55); display: grid; gap: 10px; z-index: 50; }
+.music .vol[hidden] { display: none; }
+.music .vol h4 { margin: 0; font-size: 13px; letter-spacing: .5px; text-transform: uppercase; color: var(--muted); }
+.music .vol .vrow { display: flex; align-items: center; gap: 10px; }
+.music .vol input[type=range] { flex: 1 1 0; width: auto; accent-color: var(--brass); min-width: 0; height: 28px; padding: 0; border: 0; background: none; }
+.music .vol .pct { width: 38px; text-align: right; font-weight: 800; font-variant-numeric: tabular-nums; font-size: 14px; }
+.music .vol .onoff { width: auto; height: 34px; border-radius: 99px; padding: 0 14px; font-size: 14px; font-weight: 800; box-shadow: none; opacity: 1; filter: none; }
+.music .vol .onoff.on { background: var(--brass); color: #1d1a14; border-color: var(--brass); }
 /* durante a partida o botão fica na barra da mesa, para não cobrir as cartas */
 .tablebar .music { position: static; gap: 4px; }
-.tablebar .music button { width: 32px; height: 32px; font-size: 14px; box-shadow: none; }
+.tablebar .music button.tog { width: 32px; height: 32px; font-size: 14px; box-shadow: none; }
+.tablebar .music { position: relative; left: auto; bottom: auto; }
+.tablebar .music .vol { bottom: auto; top: 40px; }
 @media (hover: hover) { .music button:hover { opacity: 1; } }
 </style>
 </head>
@@ -449,7 +466,7 @@ function nextOfTeam(from, t, n) { for (let i = 1; i <= n; i++) { const s = (from
 function firstOfTeamFrom(start, t, n) { for (let i = 0; i < n; i++) { const s = (start + i) % n; if (team(s) === t) return s; } return start; }
 function nick(st, seat) { const id = st.seats[seat]; return (id && st.names[id]) || 'Jogador ' + (seat + 1); }
 function teamLabel(t) { return t === 0 ? 'Time 1' : 'Time 2'; }
-function addLog(st, text) { st.log = [text, ...(st.log || [])].slice(0, 40); }
+function addLog(st, text) { st.log = [text, ...(st.log || [])].slice(0, 10); }
 
 function deal(st) {
   const n = st.n, deck = newDeck();
@@ -461,6 +478,7 @@ function deal(st) {
   const ferro = a === 11 && b === 11;
   const onzeTeam = !ferro && (a === 11 || b === 11) ? (a === 11 ? 0 : 1) : -1;
   st.hand = {
+    hid: Math.random().toString(36).slice(2, 8), // identifica a mão (para as animações)
     vira, hands, played: [[]], rw: [], turn: mao, mao, value: 1, lastRaise: -1, pending: null,
     ferro, onzeTeam, onzeDecider: onzeTeam >= 0 ? firstOfTeamFrom(mao, onzeTeam, n) : -1,
   };
@@ -1824,69 +1842,91 @@ function applyTalking() {
 }
 
 /* ---------------- SOM DE VIOLA DE FUNDO ----------------
-   Um trecho de viola em loop, bem baixinho (arquivo viola.mp3, ao lado do site).
-   Cada pessoa liga ou desliga no próprio aparelho; o jogo lembra a escolha.
-   O volume passa pelo controle de áudio porque o iPhone ignora o volume normal,
-   e o loop é feito por ele também, para não ter emenda. */
+   Um trecho de viola em loop (arquivo viola.mp3, ao lado do site).
+   Tocar no 🎵 abre o painel: liga/desliga e volume. Cada pessoa escolhe no
+   próprio aparelho e o jogo lembra. O volume passa pelo controle de áudio
+   porque o iPhone ignora o volume normal da página. */
 const MUSIC_SRC = 'viola.mp3';
-const MUSIC_VOL = 0.07, MUSIC_DUCK = 0.02; // abaixa ainda mais enquanto alguém fala na voz
-const music = { box: null, ctx: null, gain: null, buf: null, src: null, on: true, loading: false };
-try { music.on = localStorage.getItem('truco.musica') !== 'off'; } catch {}
+const MUSIC_MAX = 0.2;     // volume no 100%
+const MUSIC_DEFAULT = 30;  // começa em 30%
+const music = { box: null, ctx: null, gain: null, el: null, on: true, vol: MUSIC_DEFAULT };
+try {
+  music.on = localStorage.getItem('truco.musica') !== 'off';
+  const v = parseInt(localStorage.getItem('truco.volume'), 10);
+  if (v >= 0 && v <= 100) music.vol = v;
+} catch {}
+// a curva é quadrática: o começo da barra fica mais fino, que é onde o ouvido nota diferença
+const musicLevel = () => MUSIC_MAX * (music.vol / 100) ** 2;
 function initMusic() {
   const AC = window.AudioContext || window.webkitAudioContext;
   if (!AC || (window.claude && !localMode)) return;
   const box = music.box = document.createElement('div'); box.className = 'music';
-  box.innerHTML = '<button type="button" class="tog" aria-label="Som de viola de fundo">🎵</button>';
+  box.innerHTML = `<button type="button" class="tog" aria-label="Som" aria-expanded="false" aria-controls="volPanel">🎵</button>
+    <div class="vol" id="volPanel" hidden>
+      <h4>Som de viola</h4>
+      <div class="vrow"><button type="button" class="onoff"></button></div>
+      <div class="vrow"><span aria-hidden="true">🔈</span><input type="range" min="0" max="100" step="5" aria-label="Volume da viola"><span class="pct"></span></div>
+    </div>`;
   document.body.appendChild(box);
-  box.querySelector('.tog').onclick = e => { e.stopPropagation(); setMusic(!music.on); };
+  const pop = box.querySelector('.vol'), tog = box.querySelector('.tog'), range = box.querySelector('input');
+  const openPop = open => { pop.hidden = !open; tog.setAttribute('aria-expanded', String(open)); };
+  tog.onclick = e => { e.stopPropagation(); openPop(pop.hidden); };
+  box.querySelector('.onoff').onclick = e => { e.stopPropagation(); setMusic(!music.on); };
+  range.value = music.vol;
+  range.oninput = () => {
+    music.vol = +range.value;
+    try { localStorage.setItem('truco.volume', String(music.vol)); } catch {}
+    if (music.vol > 0 && !music.on) setMusic(true);
+    applyMusicVolume(); paintMusic();
+  };
+  pop.onpointerdown = e => e.stopPropagation();
+  // tocar fora fecha o painel
+  document.addEventListener('pointerdown', e => { if (!box.contains(e.target)) openPop(false); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') openPop(false); });
   paintMusic();
   // o navegador só deixa tocar som depois do primeiro toque na tela
   const kick = () => { if (music.on) playMusic(); };
   document.addEventListener('pointerdown', kick, { once: true, capture: true });
   document.addEventListener('keydown', kick, { once: true, capture: true });
-  setInterval(() => { duckMusic(); placeMusic(); }, 400);
+  setInterval(() => { applyMusicVolume(); placeMusic(); }, 400);
 }
 function setMusic(on) {
   music.on = on;
   try { localStorage.setItem('truco.musica', on ? 'on' : 'off'); } catch {}
-  if (on) playMusic(); else if (music.ctx) music.ctx.suspend().catch(() => {});
+  if (on) playMusic(); else if (music.el) music.el.pause();
   paintMusic();
 }
 function paintMusic() {
-  const b = music.box && music.box.querySelector('.tog');
-  if (!b) return;
-  b.classList.toggle('off', !music.on);
-  b.setAttribute('aria-pressed', music.on ? 'true' : 'false');
-  b.title = music.on ? 'Desligar o som de viola' : 'Ligar o som de viola';
+  const box = music.box; if (!box) return;
+  const tog = box.querySelector('.tog'), oo = box.querySelector('.onoff');
+  tog.classList.toggle('off', !music.on || !music.vol);
+  tog.title = 'Som de viola: ' + (music.on ? music.vol + '%' : 'desligado');
+  oo.textContent = music.on ? 'Ligado' : 'Desligado';
+  oo.classList.toggle('on', music.on);
+  oo.setAttribute('aria-pressed', String(music.on));
+  box.querySelector('.pct').textContent = music.vol + '%';
 }
-async function playMusic() {
-  try {
-    if (!music.ctx) {
+function playMusic() {
+  if (!music.el) {
+    const el = music.el = new Audio(MUSIC_SRC);
+    el.loop = true; el.preload = 'auto'; el.setAttribute('playsinline', '');
+    el.onerror = () => { if (music.box) music.box.hidden = true; }; // sem o arquivo, some o botão
+    try {
       const AC = window.AudioContext || window.webkitAudioContext;
       music.ctx = new AC();
-      music.gain = music.ctx.createGain(); music.gain.gain.value = MUSIC_VOL;
-      music.gain.connect(music.ctx.destination);
-    }
-    if (music.ctx.state === 'suspended') music.ctx.resume().catch(() => {});
-    if (music.src || music.loading) return;
-    music.loading = true;
-    if (!music.buf) {
-      const r = await fetch(MUSIC_SRC);
-      if (!r.ok) throw new Error('sem arquivo');
-      const data = await r.arrayBuffer();
-      // o iPhone antigo só aceita o jeito com funções de retorno
-      music.buf = await new Promise((ok, bad) => { const p = music.ctx.decodeAudioData(data, ok, bad); if (p && p.catch) p.catch(() => {}); });
-    }
-    const s = music.src = music.ctx.createBufferSource();
-    s.buffer = music.buf; s.loop = true; s.connect(music.gain); s.start();
-    if (!music.on) music.ctx.suspend().catch(() => {});
-  } catch { if (music.box) music.box.hidden = true; } // sem o arquivo, some o botão
-  finally { music.loading = false; }
+      music.gain = music.ctx.createGain(); music.gain.gain.value = musicLevel();
+      music.ctx.createMediaElementSource(el).connect(music.gain).connect(music.ctx.destination);
+    } catch { music.ctx = music.gain = null; el.volume = Math.min(1, musicLevel()); }
+  }
+  if (music.ctx && music.ctx.state === 'suspended') music.ctx.resume().catch(() => {});
+  music.el.play().catch(() => {});
 }
-function duckMusic() {
-  if (!music.gain) return;
+// enquanto alguém fala na voz, a viola cai para um terço
+function applyMusicVolume() {
+  if (!music.el) return;
   const talking = pttDown || !!(vz && Object.values(vz.talking).some(Boolean));
-  music.gain.gain.setTargetAtTime(talking ? MUSIC_DUCK : MUSIC_VOL, music.ctx.currentTime, 0.15);
+  const v = musicLevel() * (talking ? 0.3 : 1);
+  if (music.gain) music.gain.gain.setTargetAtTime(v, music.ctx.currentTime, 0.08); else music.el.volume = Math.min(1, v);
 }
 // na partida vai para a barra da mesa (logo depois do nome da mesa); fora dela, canto da tela
 function placeMusic() {
@@ -2382,6 +2422,7 @@ async function createTable() {
 /* =========================================================
    MESA
    ========================================================= */
+let lastTableKey = '';
 function openTable(c) {
   if (!db) return;
   stopTourneyLobby();
@@ -2391,7 +2432,7 @@ function openTable(c) {
   if (unsubTable) unsubTable();
   stopTableTimers();
   code = c; cur = null; cover = false;
-  let first = true;
+  let first = true; lastTableKey = '';
   history.replaceState(null, '', '#' + c);
   $app.innerHTML = '<p class="muted">Procurando a mesa…</p>';
   document.getElementById('topRight').innerHTML = '';
@@ -2412,7 +2453,12 @@ function openTable(c) {
       startTableTimers(c);
       startChat(c);
     }
+    // o "estou aqui" (aliveAt) de cada jogador chega a cada poucos segundos:
+    // se só isso mudou, não precisa redesenhar a mesa inteira
+    const key = JSON.stringify({ ...data, aliveAt: 0 });
     cur = data;
+    if (key === lastTableKey) return;
+    lastTableKey = key;
     if (data.phase === 'gameEnd') clearChat(c); // fim da partida: a conversa some
     render();
   }, () => toast('A conexão com a mesa caiu. Recarregue a página.'));
@@ -2565,9 +2611,12 @@ function render() {
     const tops = plays.filter(p => str(p) === best && team(p.seat) === h.rw[showRound] && !p.covered);
     winSeat = (tops.length ? tops.reduce((x, y) => (SUITS.indexOf(y.card[1]) > SUITS.indexOf(x.card[1]) ? y : x)) : plays.find(p => str(p) === best)).seat;
   }
+  const hk = handKey(st);
   const playedHtml = plays.map(p => {
     const q = pos(p.seat, st.n === 6 ? [22, 24] : [20, 15]);
-    return `<div class="played ${p.seat === winSeat ? 'win' : ''} ${old && st.phase === 'play' ? 'old' : ''}" style="left:${q.x}%;top:${q.y}%">${p.covered ? '<span class="card covered"></span>' : cardHtml(p.card, h.vira)}</div>`;
+    // de onde a carta sai: da cadeira de quem jogou (a minha vem de baixo, da mão)
+    const f = seated && p.seat === me ? { x: 50, y: 118 } : pos(p.seat, [35, 37]);
+    return `<div class="played ${p.seat === winSeat ? 'win' : ''} ${old && st.phase === 'play' ? 'old' : ''}" data-ak="${hk}|${showRound}|${p.seat}" data-from="${f.x - q.x},${f.y - q.y}" style="left:${q.x}%;top:${q.y}%">${p.covered ? '<span class="card covered"></span>' : cardHtml(p.card, h.vira)}</div>`;
   }).join('');
   const viraHtml = `<div class="score vira-tile"><h3>Vira</h3><div class="row" style="gap:8px;flex-wrap:nowrap">${cardHtml(h.vira, null)}<span class="vlbl">manilha<br><b class="mrk">${manilhaRank(h.vira)}</b></span></div></div>`;
   const lastTrick = plays.length && old && st.phase === 'play' ? '<div class="last-trick">mão anterior</div>' : '';
@@ -2651,6 +2700,7 @@ function render() {
     <aside class="side">${tableBar}${chatPanelHtml()}${ledgerHtml(st)}${account && !solo ? '<section class="panel" id="payPanel"></section>' : ''}</aside>
   </div>`;
   $app.querySelectorAll('[data-leave]').forEach(b => (b.onclick = showLobby));
+  animateTable(st, hk, me);
   if (canChat()) { if (!vz || vz.code !== code) startVoice(code); } else if (vz) stopVoice();
   bindChat();
   renderPayments();
@@ -2664,6 +2714,83 @@ function render() {
   }));
   const cv = document.getElementById('cover'); if (cv) cv.onclick = () => { cover = !cover; render(); };
   $app.querySelectorAll('[data-act]').forEach(b => (b.onclick = () => (b.dataset.act === 'lobby' ? showLobby() : b.dataset.act === 'tour' ? openTournament(cur.torneio.tid) : act(b.dataset.act))));
+}
+
+/* =========================================================
+   ANIMAÇÕES DA MESA
+   Só anima o que é novo: a mesa é redesenhada a cada jogada, então
+   cada carta jogada e cada pedido de truco é lembrado por uma chave.
+   ========================================================= */
+const calmMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+const handKey = st => st.code + '_' + (st.hand ? st.hand.hid || [st.gameNo, st.dealer, st.hand.vira].join('-') : '');
+const anim = { table: null, seen: new Set(), hand: null, phase: null, pending: null };
+function animateTable(st, hk, me) {
+  const fresh = anim.table !== st.code;           // acabou de abrir a mesa: não anima o que já estava lá
+  if (fresh) { anim.table = st.code; anim.seen.clear(); anim.hand = anim.pending = null; }
+  const h = st.hand, motion = !fresh && !calmMotion() && !!document.body.animate;
+  const mesa = $app.querySelector('.mesa');
+  // 1. carta voando da cadeira até o meio da mesa
+  $app.querySelectorAll('.played[data-ak]').forEach(el => {
+    const k = el.dataset.ak;
+    if (anim.seen.has(k)) return;
+    anim.seen.add(k);
+    if (!motion || !mesa) return;
+    const [fx, fy] = el.dataset.from.split(',').map(Number);
+    const dx = fx / 100 * mesa.clientWidth, dy = fy / 100 * mesa.clientHeight;
+    const spin = (Math.random() * 30 - 15).toFixed(1);
+    el.animate([
+      { transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) rotate(${spin}deg) scale(.75)`, opacity: .85 },
+      { transform: 'translate(-50%, -50%) rotate(0deg) scale(1.08)', opacity: 1, offset: .8 },
+      { transform: 'translate(-50%, -50%)' },
+    ], { duration: 420, easing: 'cubic-bezier(.2,.8,.25,1)' });
+  });
+  // 2. cartas novas na mão: saem do baralho uma de cada vez
+  if (anim.hand !== hk) {
+    if (motion && anim.hand !== null) {
+      $app.querySelectorAll('.hand .card').forEach((el, i) => el.animate([
+        { transform: 'translateY(-160px) rotate(-12deg) scale(.5)', opacity: 0 },
+        { transform: 'none', opacity: 1 },
+      ], { duration: 380, delay: 90 * i, easing: 'cubic-bezier(.2,.8,.25,1)', fill: 'backwards' }));
+      $app.querySelectorAll('.seat .mini').forEach(el => el.animate([{ opacity: 0, transform: 'scale(.6)' }, { opacity: 1, transform: 'none' }], { duration: 300, delay: 120 }));
+    }
+    anim.hand = hk;
+  }
+  // 3. truco, seis, nove, doze: carimbo grande e a mesa treme
+  const p = h && h.pending;
+  const pk = st.phase === 'truco' && p ? `${hk}|${p.to}|${p.caller}` : null;
+  if (pk && pk !== anim.pending && !fresh) {
+    stamp(`${RAISE_NAME[p.to]}!`, `${nick(st, p.caller)} pediu`, '');
+    if (motion && mesa) mesa.animate([
+      { transform: 'none' }, { transform: 'translateX(-10px) rotate(-.6deg)' }, { transform: 'translateX(9px) rotate(.5deg)' },
+      { transform: 'translateX(-6px)' }, { transform: 'translateX(4px)' }, { transform: 'none' },
+    ], { duration: 450, delay: 120, easing: 'ease-out' });
+    if (me >= 0 && p.responder === me && navigator.vibrate) navigator.vibrate([90, 50, 90]);
+  } else if (!fresh && anim.phase === 'truco' && st.phase !== 'truco' && anim.pending && anim.pending.startsWith(hk + '|')) {
+    // resposta: aceitou ou correu
+    if (st.phase === 'handEnd' || st.phase === 'gameEnd') stamp('Correu!', '', 'run');
+    else if (st.phase === 'play') stamp('Aceitou!', `valendo ${h.value}`, 'ok');
+  }
+  if (pk) anim.pending = pk;
+  anim.phase = st.phase;
+}
+function stamp(text, sub, kind) {
+  document.querySelectorAll('.stamp').forEach(e => e.remove());
+  const el = document.createElement('div');
+  el.className = 'stamp ' + (kind || '');
+  el.setAttribute('role', 'status');
+  el.innerHTML = esc(text) + (sub ? `<small>${esc(sub)}</small>` : '');
+  document.body.appendChild(el);
+  const big = !kind, ms = big ? 1400 : 1000;
+  if (calmMotion() || !el.animate) { setTimeout(() => el.remove(), ms); return; }
+  const base = 'translate(-50%, -50%) rotate(-8deg)';
+  el.animate([
+    { transform: `${base} scale(${big ? 3 : 1.8})`, opacity: 0 },
+    { transform: `${base} scale(.92)`, opacity: 1, offset: .22 },
+    { transform: `${base} scale(1.04)`, offset: .32 },
+    { transform: `${base} scale(1)`, opacity: 1, offset: .8 },
+    { transform: `${base} scale(1.1)`, opacity: 0 },
+  ], { duration: ms, easing: 'ease-out' }).onfinish = () => el.remove();
+  setTimeout(() => el.remove(), ms + 300); // se a aba estiver em segundo plano
 }
 
 function act(a, me = mySeat()) {
