@@ -190,6 +190,13 @@ body.in-game .partner { flex: none; }
   body.in-game .side { display: none; } /* no celular fica só a mesa; saldo e pagamentos estão no saguão */
 }
 @media (max-width: 560px) {
+  body.in-game .tablebar { flex-wrap: nowrap; gap: 6px; }
+  body.in-game .tablebar > .muted { display: none; }
+  body.in-game .tablebar .code { font-size: 14px; letter-spacing: 1px; }
+  body.in-game .tablebar .tag { padding: 2px 6px; font-size: 11px; }
+  body.in-game .tablebar .small { padding: 6px 9px; font-size: 13px; }
+  body.in-game .tablebar .ptt { margin-left: auto; }
+  body.in-game .tablebar .ptt ~ .small { margin-left: 0; }
   body.in-game .score { padding: 5px 6px; border-radius: 10px; }
   body.in-game .score h3 { font-size: 9px; letter-spacing: .5px; }
   body.in-game .score b { font-size: 20px; }
@@ -217,6 +224,37 @@ body.in-game .partner { flex: none; }
 .file-btn { position: relative; display: inline-block; font-weight: 800; cursor: pointer; border-radius: 10px; padding: 10px 16px; border: 1px solid #b8862c; background: var(--brass); color: #2a1a05; font-size: 15px; }
 .file-btn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
 .file-btn:focus-within { outline: 2px solid var(--brass); outline-offset: 2px; }
+
+/* ---- conversa da mesa ---- */
+.chat-panel { gap: 8px; }
+.chat-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.chat-close { display: none; }
+.chat-list { display: grid; gap: 6px; align-content: start; max-height: 240px; min-height: 80px; overflow-y: auto; padding-right: 4px; overscroll-behavior: contain; }
+.chat-msg { display: grid; gap: 2px; justify-items: start; max-width: 92%; padding: 6px 10px; border-radius: 12px 12px 12px 4px; background: var(--felt-deep); border: 1px solid var(--line); overflow-wrap: anywhere; }
+.chat-msg.mine { justify-self: end; justify-items: end; border-radius: 12px 12px 4px 12px; background: #1b4c3a; }
+.chat-msg .who { font-size: 11px; font-weight: 800; color: var(--muted); }
+.chat-msg.mine .who { color: var(--brass); }
+.chat-msg .txt { font-size: 14px; }
+.chat-empty, .chat-note { font-size: 12px; margin: 0; }
+.chat-form { display: flex; gap: 6px; align-items: center; }
+.chat-form input { flex: 1 1 auto; min-width: 0; }
+.ptt { touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; background: #1b4c3a; border-color: var(--brass); color: var(--brass); }
+.ptt.on { background: var(--red); border-color: var(--red); color: #fff3e6; box-shadow: 0 0 0 4px rgba(184,50,42,.35); }
+.seat.talking .avatar { box-shadow: 0 0 0 3px #5fd38a, 0 0 16px rgba(95,211,138,.8); }
+.seat.talking .name::after { content: ' 🔊'; }
+.chat-toggle { position: relative; display: none; font-size: 16px; padding: 6px 12px; }
+.chat-toggle .badge { position: absolute; top: -6px; right: -6px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 99px; background: var(--red); color: #fff3e6; font-size: 11px; line-height: 18px; text-align: center; }
+#chatBubble { position: fixed; z-index: 45; left: 50%; transform: translateX(-50%); top: calc(64px + env(safe-area-inset-top, 0px)); max-width: calc(100% - 32px); padding: 8px 14px; border-radius: 12px; background: #2a1a05; color: #f7e2b5; border: 1px solid var(--brass); font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+@media (max-width: 860px) {
+  /* no celular a conversa vira uma gaveta que sobe de baixo */
+  body.in-game .side { display: block; height: 0; overflow: visible; }
+  body.in-game .side > :not(.chat-panel) { display: none; }
+  body.in-game .board > .tablebar .chat-toggle { display: inline-block; }
+  .chat-panel { position: fixed; z-index: 40; left: 0; right: 0; bottom: 0; border-radius: 16px 16px 0 0; max-height: 62dvh; padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px)); padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); box-shadow: 0 -12px 40px rgba(0,0,0,.55); transform: translateY(110%); visibility: hidden; transition: transform .2s ease, visibility .2s; }
+  body.chat-open .chat-panel { transform: none; visibility: visible; }
+  .chat-close { display: inline-block; }
+  .chat-list { max-height: 38dvh; }
+}
 
 /* cartas */
 .card {
@@ -508,7 +546,7 @@ function mockDb() {
    então cada documento vai guardado como texto JSON no campo "j". Os campos usados
    em buscas e nas regras de segurança também ficam soltos no documento.
    ========================================================= */
-const TOP_FIELDS = ['updatedAt', 'aliveAt', 'closedAt', 'at', 'to', 'from', 'status', 'confirmedAt', 'uid', 'name'];
+const TOP_FIELDS = ['updatedAt', 'aliveAt', 'closedAt', 'at', 'to', 'from', 'status', 'confirmedAt', 'uid', 'name', 'table'];
 const EMAIL_DOMAIN = 'truco.jogo';   // as contas do Firebase usam usuario@truco.jogo (nenhum e-mail é enviado)
 const pinPassword = pin => 'truco#' + pin; // o Firebase exige 6+ caracteres
 
@@ -709,7 +747,7 @@ async function commit(fn) {
   busy = true; render();
   try {
     await tableRef(code).set(st);
-    if (st.phase === 'gameEnd' && prevPhase !== 'gameEnd') recordGame(st);
+    if (st.phase === 'gameEnd' && prevPhase !== 'gameEnd') { recordGame(st); clearChat(st.code); }
   }
   catch (e) { toast(e && e.code === 'invalid_argument' ? 'Sem permissão para jogar nesta mesa.' : 'Não deu para salvar a jogada. Tente de novo.'); }
   finally { busy = false; render(); }
@@ -796,6 +834,7 @@ function botMove(s) {
 
 function showLobby() {
   document.body.classList.remove('in-game');
+  stopChat();
   leaveSolo();
   stopTableTimers();
   if (unsubTable) { unsubTable(); unsubTable = null; }
@@ -1384,7 +1423,299 @@ const removing = new Set();
 async function removeTable(c) {
   if (removing.has(c) || !canWrite || !account) return;
   removing.add(c);
+  clearChat(c);
   try { await db.doc('mesas/' + c + '/locks/seats').delete(); await tableRef(c).delete(); } catch {}
+}
+
+/* =========================================================
+   CONVERSA DA MESA — texto + voz ao vivo (segura para falar, como rádio)
+   O texto fica no banco só durante a partida e é apagado no fim.
+   A voz vai direto de um aparelho para o outro (WebRTC); o banco só guarda
+   o "aperto de mão" da conexão, que também é apagado no fim.
+   ========================================================= */
+const CHAT_MAX_TEXT = 200;
+let chatMsgs = [], unsubChat = null, chatCode = null, chatOpenedAt = 0, chatUnread = 0, chatSheetOpen = false, lastChatSend = 0;
+const chatCleared = new Set();
+
+function startChat(c) {
+  stopChat();
+  if (!db || solo) return;
+  chatCode = c; chatOpenedAt = Date.now(); chatUnread = 0;
+  unsubChat = db.collection('chat').where('table', '==', c).onSnapshot(snap => {
+    const list = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(m => m.text).sort((a, b) => a.at - b.at);
+    const known = new Set(chatMsgs.map(m => m.id));
+    const fresh = list.filter(m => !known.has(m.id) && m.at >= chatOpenedAt && m.from !== myId);
+    chatMsgs = list;
+    onNewChat(fresh);
+    renderChat();
+  }, () => {});
+}
+function stopChat() {
+  if (unsubChat) unsubChat();
+  unsubChat = null; chatMsgs = []; chatCode = null; chatUnread = 0;
+  chatSheetOpen = false; document.body.classList.remove('chat-open');
+  stopVoice();
+}
+
+const isPhoneLayout = () => matchMedia('(max-width: 860px)').matches;
+function onNewChat(fresh) {
+  if (!fresh.length || !(isPhoneLayout() && !chatSheetOpen)) return;
+  chatUnread += fresh.length;
+  const m = fresh[fresh.length - 1];
+  chatBubble(`${m.name || 'Alguém'}: ${m.text}`);
+}
+function chatBubble(text) {
+  let el = document.getElementById('chatBubble');
+  if (!el) { el = document.createElement('div'); el.id = 'chatBubble'; document.body.appendChild(el); el.onclick = () => openChatSheet(true); }
+  el.textContent = text; el.hidden = false;
+  clearTimeout(chatBubble.t); chatBubble.t = setTimeout(() => (el.hidden = true), 4000);
+}
+
+const canChat = () => !!(cur && !solo && account && db && mySeat() >= 0 && cur.phase !== 'lobby' && cur.phase !== 'gameEnd');
+
+function chatPanelHtml() {
+  if (solo) return '';
+  const ended = cur && cur.phase === 'gameEnd';
+  return `<section class="panel chat-panel" aria-label="Conversa da mesa">
+    <div class="chat-head"><h3>Conversa da mesa</h3><button type="button" class="small chat-close" data-chatclose aria-label="Fechar conversa">Fechar</button></div>
+    <div class="chat-list" id="chatList" aria-live="polite"></div>
+    ${ended ? '<p class="muted chat-note">A conversa foi apagada no fim da partida.</p>' : `
+    <form class="chat-form" id="chatForm" autocomplete="off">
+      <input id="chatInput" maxlength="${CHAT_MAX_TEXT}" placeholder="${canChat() ? 'Escreva para a mesa…' : 'Só quem está jogando pode falar'}" ${canChat() ? '' : 'disabled'} aria-label="Mensagem">
+      <button type="submit" class="small primary" ${canChat() ? '' : 'disabled'}>Enviar</button>
+    </form>
+    <p class="muted chat-note" id="voiceStatus">${esc(voiceStatusText())}</p>`}
+  </section>`;
+}
+// botões da linha de cima: 💬 (celular) e 🎤 segurar para falar
+const chatToggleHtml = () => (solo ? '' : `${voiceOK() && canChat() ? '<button type="button" class="small ptt" data-ptt aria-label="Segure para falar com a mesa">🎤 Falar</button>' : ''}<button type="button" class="small chat-toggle" data-chatopen aria-label="Abrir conversa">💬${chatUnread ? `<span class="badge">${chatUnread}</span>` : ''}</button>`);
+
+function renderChat() {
+  const list = document.getElementById('chatList');
+  document.querySelectorAll('[data-chatopen]').forEach(b => (b.innerHTML = '💬' + (chatUnread ? `<span class="badge">${chatUnread}</span>` : '')));
+  const vs = document.getElementById('voiceStatus'); if (vs) vs.textContent = voiceStatusText();
+  if (!list) return;
+  const atBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 40;
+  list.innerHTML = chatMsgs.length ? chatMsgs.map(m => `
+    <div class="chat-msg ${m.from === myId ? 'mine' : ''}">
+      <span class="who">${esc(m.from === myId ? 'Você' : (m.name || 'Alguém'))}</span>
+      <span class="txt">${esc(m.text)}</span>
+    </div>`).join('') : '<p class="muted chat-empty">Ninguém escreveu nada ainda.</p>';
+  if (atBottom || list.dataset.first !== '1') { list.scrollTop = list.scrollHeight; list.dataset.first = '1'; }
+}
+
+// guarda o que está sendo digitado, porque a mesa é redesenhada a cada jogada
+let chatDraft = '', chatHadFocus = false;
+function saveChatDraft() {
+  const i = document.getElementById('chatInput');
+  if (i) { chatDraft = i.value; chatHadFocus = document.activeElement === i; }
+}
+function bindChat() {
+  const f = document.getElementById('chatForm'), i = document.getElementById('chatInput');
+  if (i) { i.value = chatDraft; if (chatHadFocus && !i.disabled) i.focus(); i.oninput = () => (chatDraft = i.value); }
+  if (f) f.onsubmit = e => { e.preventDefault(); sendChatText(); };
+  document.querySelectorAll('[data-ptt]').forEach(b => {
+    b.onpointerdown = e => { e.preventDefault(); pttPress(); };
+    b.oncontextmenu = e => e.preventDefault();
+    b.classList.toggle('on', pttDown);
+  });
+  document.querySelectorAll('[data-chatopen]').forEach(b => (b.onclick = () => openChatSheet(true)));
+  document.querySelectorAll('[data-chatclose]').forEach(b => (b.onclick = () => openChatSheet(false)));
+  document.body.classList.toggle('chat-open', chatSheetOpen);
+  renderChat();
+  applyTalking();
+}
+function openChatSheet(open) {
+  chatSheetOpen = open;
+  if (open) chatUnread = 0;
+  document.body.classList.toggle('chat-open', open);
+  renderChat();
+  if (open) { const i = document.getElementById('chatInput'); if (i && !i.disabled) setTimeout(() => i.focus(), 50); }
+}
+
+const rid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+async function sendChatText() {
+  const i = document.getElementById('chatInput');
+  const text = (i ? i.value : '').trim().slice(0, CHAT_MAX_TEXT);
+  if (!text) return;
+  if (!canChat()) return toast('A conversa só funciona durante a partida.');
+  if (Date.now() - lastChatSend < 700) return toast('Calma, uma mensagem por vez.');
+  lastChatSend = Date.now();
+  chatDraft = ''; if (i) i.value = '';
+  try { await db.collection('chat').doc(chatCode + '-' + rid()).set({ table: chatCode, from: myId, name: myNick, at: Date.now(), text }); }
+  catch { toast('Não deu para enviar. Tente de novo.'); }
+}
+
+/* ---------------- VOZ AO VIVO ----------------
+   Cada par de jogadores abre uma ligação direta. Quem tem o nome "menor" chama,
+   o outro atende. O microfone só manda som enquanto o botão está apertado. */
+const ICE_SERVERS = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }, ...(window.TURN_SERVERS || [])];
+const voiceOK = () => !!(window.RTCPeerConnection && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) && (localMode || !window.claude);
+let vz = null;          // { code, session, peers: {key: {pc, offerId, remoteSession, audio, answered}}, talking: {}, unsub }
+let micStream = null, micTrack = null, pttDown = false, pttPressedAt = 0, micReleasedAt = 0;
+
+const vozId = (...parts) => [vz.code, ...parts].join('-');
+function writeVoz(id, body) { return db.collection('voz').doc(id).set({ table: vz.code, from: myId, at: Date.now(), ...body }).catch(() => {}); }
+
+function startVoice(c) {
+  stopVoice();
+  if (!voiceOK() || solo || !db || !account || mySeat() < 0) return;
+  vz = { code: c, session: rid(), peers: {}, talking: {} };
+  writeVoz(vozId(myId), { kind: 'hello', session: vz.session, talking: false });
+  vz.unsub = db.collection('voz').where('table', '==', c).onSnapshot(snap => onVozDocs(snap.docs.map(d => ({ id: d.id, ...d.data() }))), () => {});
+}
+function stopVoice() {
+  pttRelease();
+  if (!vz) return;
+  const v = vz; vz = null;
+  if (v.unsub) v.unsub();
+  for (const k in v.peers) closePeer(v.peers[k]);
+  if (micStream) micStream.getTracks().forEach(t => t.stop());
+  micStream = micTrack = null;
+  // apaga o que esta pessoa deixou no banco para a ligação
+  db.collection('voz').where('table', '==', v.code).get().then(s => s.docs.forEach(d => { if (d.data().from === myId) db.collection('voz').doc(d.id).delete().catch(() => {}); })).catch(() => {});
+}
+function closePeer(p) {
+  try { p.pc.close(); } catch {}
+  if (p.audio) p.audio.remove();
+}
+
+function onVozDocs(docs) {
+  if (!vz || !cur) return;
+  const others = cur.seats.filter(k => k && k !== myId);
+  for (const d of docs) {
+    if (!others.includes(d.from)) continue;
+    if (d.kind === 'hello') {
+      vz.talking[d.from] = !!d.talking;
+      const p = vz.peers[d.from];
+      if (myId < d.from && (!p || p.remoteSession !== d.session)) makeOffer(d.from, d.session);
+    } else if (d.kind === 'offer' && d.to === myId && d.from < myId) {
+      const p = vz.peers[d.from];
+      if (!p || p.offerId !== d.offerId) answerOffer(d);
+    } else if (d.kind === 'answer' && d.to === myId) {
+      const p = vz.peers[d.from];
+      if (p && p.offerId === d.offerId && !p.answered) {
+        p.answered = true;
+        p.pc.setRemoteDescription({ type: 'answer', sdp: d.sdp }).catch(() => {});
+      }
+    }
+  }
+  applyTalking();
+  renderChat();
+}
+
+function newPeer(key) {
+  const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+  const p = { pc, key, state: 'conectando' };
+  pc.ontrack = e => {
+    if (!p.audio) { p.audio = document.createElement('audio'); p.audio.autoplay = true; p.audio.playsInline = true; p.audio.setAttribute('playsinline', ''); document.body.appendChild(p.audio); }
+    p.audio.srcObject = e.streams[0] || new MediaStream([e.track]);
+    p.audio.play().catch(() => {});
+  };
+  pc.onconnectionstatechange = () => {
+    p.state = { connected: 'conectado', failed: 'falhou', disconnected: 'caiu', closed: 'fechado' }[pc.connectionState] || 'conectando';
+    renderChat();
+  };
+  return p;
+}
+const waitIce = pc => new Promise(res => {
+  if (pc.iceGatheringState === 'complete') return res();
+  const t = setTimeout(res, 2500);
+  pc.addEventListener('icegatheringstatechange', () => { if (pc.iceGatheringState === 'complete') { clearTimeout(t); res(); } });
+});
+async function makeOffer(to, remoteSession) {
+  if (vz.peers[to]) closePeer(vz.peers[to]);
+  const p = newPeer(to);
+  p.offerId = rid(); p.remoteSession = remoteSession;
+  vz.peers[to] = p;
+  const tr = p.pc.addTransceiver('audio', { direction: 'sendrecv' });
+  if (micTrack) tr.sender.replaceTrack(micTrack);
+  try {
+    await p.pc.setLocalDescription(await p.pc.createOffer());
+    await waitIce(p.pc);
+    if (vz && vz.peers[to] === p) writeVoz(vozId(myId, to, 'o'), { kind: 'offer', to, offerId: p.offerId, sdp: p.pc.localDescription.sdp });
+  } catch { p.state = 'falhou'; }
+}
+async function answerOffer(d) {
+  if (vz.peers[d.from]) closePeer(vz.peers[d.from]);
+  const p = newPeer(d.from);
+  p.offerId = d.offerId;
+  vz.peers[d.from] = p;
+  try {
+    await p.pc.setRemoteDescription({ type: 'offer', sdp: d.sdp });
+    const tr = p.pc.getTransceivers()[0];
+    if (tr) { tr.direction = 'sendrecv'; if (micTrack) await tr.sender.replaceTrack(micTrack); }
+    await p.pc.setLocalDescription(await p.pc.createAnswer());
+    await waitIce(p.pc);
+    if (vz && vz.peers[d.from] === p) writeVoz(vozId(myId, d.from, 'a'), { kind: 'answer', to: d.from, offerId: d.offerId, sdp: p.pc.localDescription.sdp });
+  } catch { p.state = 'falhou'; }
+}
+
+// segurar para falar
+async function ensureMic() {
+  if (micTrack) return true;
+  try {
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+  } catch { toast('Libere o microfone para falar (nas permissões do navegador).'); return false; }
+  micTrack = micStream.getAudioTracks()[0];
+  micTrack.enabled = false;
+  if (vz) for (const k in vz.peers) { const tr = vz.peers[k].pc.getTransceivers()[0]; if (tr) tr.sender.replaceTrack(micTrack).catch(() => {}); }
+  return true;
+}
+async function pttPress() {
+  if (pttDown || !vz || !canChat()) return;
+  pttDown = true; pttPressedAt = Date.now();
+  window.addEventListener('pointerup', pttRelease, { once: true });
+  window.addEventListener('pointercancel', pttRelease, { once: true });
+  document.querySelectorAll('[data-ptt]').forEach(b => b.classList.add('on'));
+  const firstTime = !micTrack;
+  if (!(await ensureMic())) return pttRelease();
+  if (micReleasedAt > pttPressedAt) { if (firstTime) toast('Microfone liberado. Agora segure 🎤 para falar.'); return; } // soltou enquanto pedia permissão
+  micTrack.enabled = true;
+  writeVoz(vozId(myId), { kind: 'hello', session: vz.session, talking: true });
+}
+function pttRelease() {
+  micReleasedAt = Date.now();
+  if (!pttDown) return;
+  pttDown = false;
+  if (micTrack) micTrack.enabled = false;
+  document.querySelectorAll('[data-ptt]').forEach(b => b.classList.remove('on'));
+  if (vz) writeVoz(vozId(myId), { kind: 'hello', session: vz.session, talking: false });
+}
+
+// o iPhone só toca o som da ligação depois de um toque na tela
+document.addEventListener('pointerdown', () => { if (vz) for (const k in vz.peers) vz.peers[k].audio?.play().catch(() => {}); });
+
+function voiceStatusText() {
+  if (!voiceOK()) return 'Voz ao vivo só no site do jogo. Tudo some quando a partida acaba.';
+  if (!vz) return 'Tudo some quando a partida acaba.';
+  const ps = Object.values(vz.peers);
+  if (!ps.length) return 'Voz: esperando os outros jogadores… Segure 🎤 Falar para falar.';
+  const name = k => (cur && cur.names[k]) || k;
+  const bad = ps.filter(p => p.state === 'falhou' || p.state === 'caiu');
+  const ok = ps.filter(p => p.state === 'conectado');
+  let t = ok.length ? `Voz conectada com ${ok.map(p => name(p.key)).join(', ')}.` : 'Voz: conectando…';
+  if (bad.length) t += ` Não conectou com ${bad.map(p => name(p.key)).join(', ')} (no 4G/5G às vezes não conecta; no Wi-Fi costuma funcionar).`;
+  return t + ' Segure 🎤 Falar para falar.';
+}
+// quem está falando ganha destaque na mesa
+function applyTalking() {
+  document.querySelectorAll('.seat[data-key]').forEach(el => {
+    const k = el.dataset.key;
+    el.classList.toggle('talking', k === myId ? pttDown : !!(vz && vz.talking[k]));
+  });
+}
+
+// ---- apagar a conversa (e o aperto de mão da voz) no fim da partida ----
+async function clearChat(c) {
+  if (!db || !c || chatCleared.has(c)) return;
+  chatCleared.add(c);
+  for (const colName of ['chat', 'voz']) {
+    try {
+      const snap = await db.collection(colName).where('table', '==', c).get();
+      for (const d of snap.docs) { try { await db.collection(colName).doc(d.id).delete(); } catch {} }
+    } catch {}
+  }
 }
 
 function genCode() { const A = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; let s = ''; for (let i = 0; i < 5; i++) s += A[randInt(A.length)]; return s; }
@@ -1433,8 +1764,10 @@ function openTable(c) {
       }
       cur = data;
       startTableTimers(c);
+      startChat(c);
     }
     cur = data;
+    if (data.phase === 'gameEnd') clearChat(c); // fim da partida: a conversa some
     render();
   }, () => toast('A conexão com a mesa caiu. Recarregue a página.'));
 }
@@ -1546,7 +1879,7 @@ function render() {
   // durante o jogo a tela é só a mesa: sem cabeçalho, Mesa e Saguão vão para o lado
   document.body.classList.add('in-game');
   document.getElementById('topRight').innerHTML = '';
-  const tableBar = `<div class="tablebar">${solo ? '<span class="tag">Treino</span>' : `<span class="muted">Mesa</span> <span class="code">${esc(st.code)}</span> <span class="tag stake">vale $ ${esc(st.stake)}</span>`}<button class="small" data-leave>Saguão</button></div>`;
+  const tableBar = `<div class="tablebar">${solo ? '<span class="tag">Treino</span>' : `<span class="muted">Mesa</span> <span class="code">${esc(st.code)}</span> <span class="tag stake">vale $ ${esc(st.stake)}</span>`}${chatToggleHtml()}<button class="small" data-leave>Saguão</button></div>`;
 
   const h = st.hand;
   const r = h.rw.length;
@@ -1572,7 +1905,7 @@ function render() {
     const left = h.hands[s].length;
     const backs = Array.from({ length: left }, () => '<span class="card back"></span>').join('');
     const role = [s === st.dealer ? 'deu as cartas' : '', s === h.mao ? 'mão' : ''].filter(Boolean).join(' · ');
-    seatsHtml += `<div class="seat ${cls} ${s === actor ? 'turn' : ''}" style="left:${p.x}%;top:${p.y}%">${avatarHtml(st.seats[s], nick(st, s))}<span class="name">${esc(nick(st, s))}</span><span class="mini">${backs}</span>${role ? `<span class="role">${role}</span>` : ''}</div>`;
+    seatsHtml += `<div class="seat ${cls} ${s === actor ? 'turn' : ''}" data-key="${esc(st.seats[s] || '')}" style="left:${p.x}%;top:${p.y}%">${avatarHtml(st.seats[s], nick(st, s))}<span class="name">${esc(nick(st, s))}</span><span class="mini">${backs}</span>${role ? `<span class="role">${role}</span>` : ''}</div>`;
   }
   // cartas jogadas: rodada atual, ou a última encerrada
   let showRound = h.played[r] && h.played[r].length ? r : r - 1;
@@ -1647,6 +1980,7 @@ function render() {
   if (!seated) msg = '<span class="muted">Você está assistindo.</span> ' + msg;
 
   const scoreUs = Math.min(st.score[us], 12), scoreThem = Math.min(st.score[them], 12);
+  saveChatDraft();
   $app.innerHTML = `
   <div class="game">
     <div class="board">
@@ -1659,15 +1993,17 @@ function render() {
         ${viraHtml}
       </div>
       <div class="mesa ${st.n === 6 ? 'six' : ''}">${seatsHtml}${playedHtml}${lastTrick}${banner}
-        ${seated ? (() => { const p = pos(me, [40, 40]); return `<div class="seat us me ${me === actor ? 'turn' : ''}" style="left:${p.x}%;top:${Math.min(p.y, 90)}%">${avatarHtml(st.seats[me], nick(st, me))}<span class="name">${esc(nick(st, me))} (você)</span></div>`; })() : ''}
+        ${seated ? (() => { const p = pos(me, [40, 40]); return `<div class="seat us me ${me === actor ? 'turn' : ''}" data-key="${esc(st.seats[me] || '')}" style="left:${p.x}%;top:${Math.min(p.y, 90)}%">${avatarHtml(st.seats[me], nick(st, me))}<span class="name">${esc(nick(st, me))} (você)</span></div>`; })() : ''}
       </div>
       <div class="actions"><p class="msg">${!solo && currentActor(st) >= 0 && st.turnAt ? `<span id="clock" class="clock ${timeLeft(st) <= 5 ? 'low' : ''}">${timeLeft(st)}s</span> ` : ''}${msg}</p><div class="row" style="justify-content:center">${btns}</div></div>
       ${handHtml}
       ${partnerHtml}
     </div>
-    <aside class="side">${tableBar}${ledgerHtml(st)}${account && !solo ? '<section class="panel" id="payPanel"></section>' : ''}</aside>
+    <aside class="side">${tableBar}${chatPanelHtml()}${ledgerHtml(st)}${account && !solo ? '<section class="panel" id="payPanel"></section>' : ''}</aside>
   </div>`;
   $app.querySelectorAll('[data-leave]').forEach(b => (b.onclick = showLobby));
+  if (canChat()) { if (!vz || vz.code !== code) startVoice(code); } else if (vz) stopVoice();
+  bindChat();
   renderPayments();
   maybeShowPayOverlay(st);
 
