@@ -101,6 +101,7 @@ button.small { padding: 6px 10px; font-size: 13px; }
 main#app { display: grid; gap: 18px; min-width: 0; }
 .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); gap: 18px; }
 .mesas-list { display: grid; gap: 8px; }
+.mesa-item.mine { border-color: var(--brass); }
 .mesa-item { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--felt-deep); }
 .code { font-family: var(--display); letter-spacing: 2px; color: var(--brass); }
 .tag { font-size: 12px; font-weight: 800; padding: 2px 8px; border-radius: 99px; background: #1b4c3a; color: var(--muted); white-space: nowrap; }
@@ -440,7 +441,10 @@ body.in-game .games { display: none; }
 
 /* ---- poker ---- */
 .game.poker { grid-template-columns: minmax(0, 1fr); max-width: 980px; width: 100%; margin-inline: auto; }
-.game.poker .board > .tablebar { display: flex; }
+.game.poker .board > .tablebar { display: flex; flex-wrap: nowrap; min-width: 0; }
+.game.poker .tablebar .code { min-width: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.game.poker .tablebar .tag, .game.poker .tablebar .music, .game.poker .tablebar button { flex: none; }
+@media (max-width: 420px) { .game.poker .tablebar .code { font-size: 13px; letter-spacing: .5px; } .game.poker .tablebar .tag { padding: 2px 5px; font-size: 10px; } }
 .pmesa .pseat { position: absolute; transform: translate(-50%, -50%); display: grid; justify-items: center; gap: 2px; text-align: center; max-width: 36%; z-index: 2; }
 .pseat .name { font-weight: 800; font-size: 12px; padding: 2px 8px; border-radius: 99px; background: rgba(0,0,0,.5); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; border: 2px solid transparent; }
 .pseat .stack { font-weight: 800; font-size: 12px; color: var(--brass); font-variant-numeric: tabular-nums; }
@@ -841,6 +845,8 @@ const $app = document.getElementById('app');
    O poker fica no arquivo poker.js; a cacheta ainda não existe. */
 let currentGame = 'truco';
 try { const g = localStorage.getItem('jogo'); if (['truco', 'poker', 'cacheta'].includes(g)) currentGame = g; } catch {}
+// Pix da organização: depósitos de fichas do poker e inscrições dos torneios do truco
+const ORG_PIX = { nome: 'Organização', tipo: 'Chave aleatória', chave: '4ceac978-5e3c-4100-a811-755a8fa6144e' };
 const GAME_SUB = { truco: 'paulista · com vira', poker: "texas hold'em", cacheta: 'em breve' };
 function paintGameNav() {
   document.querySelectorAll('#games [data-game]').forEach(b => b.setAttribute('aria-current', b.dataset.game === currentGame ? 'page' : 'false'));
@@ -2249,7 +2255,7 @@ function showCreateTournament() {
       <label style="flex:1 1 140px">Prêmio 2º lugar (%)<input id="tP2" type="number" min="0" max="100" value="30"></label>
       <h3 style="flex:1 1 100%">Conta para o pagamento das inscrições (Pix)</h3>
       <label style="flex:2 1 200px">Nome (titular)<input id="tPixNome" maxlength="60"></label>
-      <label style="flex:3 1 100%">Chave aleatória<input id="tPixChave" maxlength="36" placeholder="1a2b3c4d-1a2b-1a2b-1a2b-1a2b3c4d5e6f" autocomplete="off" spellcheck="false"></label>
+      <label style="flex:3 1 100%">Chave aleatória<input id="tPixChave" maxlength="36" placeholder="1a2b3c4d-1a2b-1a2b-1a2b-1a2b3c4d5e6f" autocomplete="off" spellcheck="false" value="${ORG_PIX.chave}"></label>
       <p id="tErr" class="form-error" hidden></p>
       <div class="row" style="flex:1 1 100%"><button class="primary" type="submit">Criar torneio</button><button type="button" id="tCancel">Cancelar</button></div>
     </form>

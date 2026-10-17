@@ -25,7 +25,6 @@ const PK = {
   GRACE: 2500,       // os outros esperam um pouco antes de agir pelo atrasado
   NEXT_MS: 5000,     // pausa entre uma mão e outra
   STUCK_MS: 15000,   // anfitrião sumido: a mão é anulada
-  EMPTY_MS: 90000,   // mesa sem ninguém olhando: fecha e faz o acerto
   STREET_MS: 900,    // pausa entre flop, turn e river quando todos estão all-in
 };
 const PRANKS = '23456789TJQKA';
@@ -275,12 +274,7 @@ function pkEndHand(st) {
   if (st.type === 'sng') {
     const busted = h.inHand.filter(s => st.stacks[st.seats[s]] === 0).sort((a, b) => h.start[a] - h.start[b]);
     for (const s of busted) { const k = st.seats[s]; if (!st.sng.out.includes(k)) st.sng.out.push(k); }
-    const alive = st.seats.filter(k => k && st.stacks[k] > 0);
-    if (alive.length <= 1) {
-      st.phase = 'over'; st.sng.out.push(...alive); st.sng.endedAt = pkNow();
-      const prize = pkSngPrizes(st);
-      for (const k in prize) pkPayout(st, k, prize[k], 'premio');
-    }
+    pkCheckSngOver(st);
   } else {
     // dinheiro: quem pediu para levantar sai agora; quem zerou fica de fora até recomprar
     for (const k of Object.keys(st.leaving || {})) pkCashOut(st, k);
@@ -292,6 +286,25 @@ function pkEndHand(st) {
 function pkPayout(st, key, fichas, tipo) {
   if (!(fichas > 0)) return;
   (st.payouts ||= []).push({ id: `${st.code}-${tipo}-${key}-${Math.random().toString(36).slice(2, 9)}`, key, fichas, tipo, at: pkNow() });
+}
+// Sit & Go: sobrou um com fichas -> acabou, e o prêmio vai para as carteiras
+function pkCheckSngOver(st) {
+  if (st.type !== 'sng' || !st.sng.startedAt || st.phase === 'over' || st.phase === 'closed') return;
+  const alive = st.seats.filter(k => k && st.stacks[k] > 0);
+  if (alive.length > 1) return;
+  st.phase = 'over'; st.sng.out.push(...alive.filter(k => !st.sng.out.includes(k))); st.sng.endedAt = pkNow();
+  const prize = pkSngPrizes(st);
+  for (const k in prize) pkPayout(st, k, prize[k], 'premio');
+}
+// desiste na hora, mesmo fora da vez (quem levanta ou abandona)
+function pkFoldOut(st, seat) {
+  const h = st.hand;
+  if (st.phase !== 'hand' || !h || !h.inHand.includes(seat) || h.folded[seat]) return;
+  h.folded[seat] = true; h.acted[seat] = true;
+  h.last = { seat, a: 'fold', amount: h.bets[seat] || 0, at: pkNow() };
+  if (h.toAct === seat) return pkAdvance(st);
+  const live = h.inHand.filter(s => !h.folded[s]);
+  if (live.length === 1) pkUncontested(st, live[0]);
 }
 function pkCashOut(st, k) {
   const s = st.seats.indexOf(k);
@@ -311,14 +324,25 @@ function pkTimeout(st) {
 }
 
 /* ---------------- acerto: quem perdeu paga quem ganhou ---------------- */
-// prêmio do Sit & Go em fichas: tudo para o 1º, ou 65% / 35% com 4 ou mais jogadores
+// Prêmio do Sit & Go: as fichas do torneio não valem nada; quem paga é a colocação.
+// O prêmio é a soma das entradas, dividida pelas porcentagens da organização
+// (1º, 2º, 3º). Se entrou menos gente que lugares premiados, a sobra vai para o 1º.
+const pkSplit = sng => (Array.isArray(sng.split) ? sng.split : sng.prize === 2 ? [65, 35] : [100]);
 function pkSngPrizes(st) {
   const order = [...st.sng.out].reverse();   // 1º, 2º, ...
   const pool = st.sng.fee * order.length, out = {};
-  if (st.sng.prize === 2 && order.length >= 4) { const second = Math.floor(pool * 0.35); out[order[0]] = pool - second; out[order[1]] = second; }
-  else if (order[0]) out[order[0]] = pool;
+  if (!order.length) return out;
+  const split = pkSplit(st.sng);
+  let given = 0;
+  for (let i = 1; i < split.length; i++) {
+    if (!order[i] || !split[i]) continue;
+    const v = Math.floor(pool * split[i] / 100);
+    out[order[i]] = v; given += v;
+  }
+  out[order[0]] = pool - given;
   return out;
 }
+const pkSplitLabel = sng => pkSplit(sng).map((v, i) => (v ? `${i + 1}º ${v}%` : '')).filter(Boolean).join(' · ');
 // quanto cada um ganhou (+) ou perdeu (−) na mesa, em fichas
 function pkNets(st) {
   const net = {};
@@ -408,7 +432,7 @@ function pkMoney(st, v) {
 }
 const pkBlindsLabel = st => `${pkMoney(st, st.sb)} / ${pkMoney(st, st.bb)}`;
 function pkTypeLabel(t) {
-  if (t.type === 'sng') return `Sit & Go · entrada ${fichasTxt(t.sng.fee)} (${reaisTxt(t.sng.fee)}) · começa com ${t.sng.stack.toLocaleString('pt-BR')} no torneio`;
+  if (t.type === 'sng') return `Sit & Go · entrada ${fichasTxt(t.sng.fee)} (${reaisTxt(t.sng.fee)}) · prêmio ${pkSplitLabel(t.sng)}`;
   return `Fichas · blinds ${pkBlindsLabel(t)} · entra com ${pkMoney(t, t.buyMin)} a ${pkMoney(t, t.buyMax)}`;
 }
 function pkCard(c, cls = '') {
@@ -459,17 +483,27 @@ function showPokerLobby() {
   document.getElementById('pkSolo').onclick = () => pkStartSolo(+document.getElementById('pkSoloN').value);
   pkLobby = {};
   if (!logged) { pkRenderTables([]); pkRenderCreate(); pkRenderWallet(); return; }
-  pkLobby.org = db.doc('config/org').onSnapshot(s => { orgCfg = s.exists ? s.data() : null; pkRenderCreate(); pkWatchBank(); }, () => pkRenderCreate());
+  pkLobby.org = db.doc('config/org').onSnapshot(s => { orgCfg = s.exists ? s.data() : null; pkRenderCreate(); pkWatchBank(); if (pkW.tables) pkRenderTables(pkW.tables); }, () => pkRenderCreate());
+  pkLobby.deps = db.collection('depositos').where('key', '==', myId).onSnapshot(s => { pkW.deps = s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => b.at - a.at); pkRenderWallet(); }, () => {});
   pkLobby.wallet = db.doc('carteiras/' + myId).onSnapshot(s => { pkW.saldo = s.exists ? s.data().saldo || 0 : 0; pkW.loaded = true; pkRenderWallet(); }, () => {});
   pkLobby.saques = db.collection('saques').where('key', '==', myId).onSnapshot(s => { pkW.saques = s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => b.at - a.at); pkRenderWallet(); }, () => {});
   pkLobby.movs = db.collection('movimentos').where('key', '==', myId).onSnapshot(s => { pkW.movs = s.docs.map(d => d.data()).sort((a, b) => b.at - a.at).slice(0, 15); pkRenderWallet(); }, () => {});
   pkLobby.list = db.collection('poker').orderBy('updatedAt', 'desc').limit(30).onSnapshot(snap => {
     const list = snap.docs.map(d => d.data()).filter(Boolean);
-    for (const t of list) if (!t.closedAt && pkNow() - (t.aliveAt || t.updatedAt || 0) > PK.EMPTY_MS) pkAutoClose(t.code);
-    pkRenderTables(list.filter(t => !t.closedAt));
+    pkW.tables = list.filter(t => !t.closedAt);
+    pkRenderTables(pkW.tables);
   }, () => pkRenderTables([]));
 }
-const pkW = { saldo: 0, loaded: false, saques: [], movs: [], bankSaques: [], hist: {} };
+const pkW = { saldo: 0, loaded: false, saques: [], movs: [], deps: [], bankSaques: [], bankDeps: [], hist: {}, tab: 'depositar', tables: null };
+try { const t = localStorage.getItem('truco.carteira'); if (['depositar', 'sacar', 'historico'].includes(t)) pkW.tab = t; } catch {}
+// Pix da organização (o mesmo do truco), mostrado com o botão Copiar
+function orgPixHtml() {
+  return `<dl class="pix">
+    <dt>Nome</dt><dd>${esc(ORG_PIX.nome)}</dd>
+    <dt>Tipo</dt><dd>${esc(ORG_PIX.tipo)}</dd>
+    <dt>Chave</dt><dd class="pix-key"><span class="key-text">${esc(ORG_PIX.chave)}</span><button type="button" class="small primary" data-copy="${esc(ORG_PIX.chave)}">Copiar</button></dd>
+  </dl>`;
+}
 function pkMovRow(m) {
   const d = new Date(m.at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
   return `<li><span>${esc(MOV_NAMES[m.tipo] || m.tipo)}${m.table ? ` <span class="muted">· ${esc(m.table)}</span>` : ''}${m.nota ? ` <span class="muted">· ${esc(m.nota)}</span>` : ''}</span><b class="${m.fichas >= 0 ? 'pos' : 'neg'}">${m.fichas >= 0 ? '+' : '−'}${Math.abs(m.fichas).toLocaleString('pt-BR')}</b><small class="muted">${d}</small></li>`;
@@ -479,14 +513,47 @@ function pkRenderWallet() {
   if (!account || !db) { el.innerHTML = '<h2>Minha carteira</h2><p class="muted">Entre com seu usuário para ver suas fichas.</p>'; return; }
   if (!pkW.loaded) { el.innerHTML = '<h2>Minha carteira</h2><p class="muted">Carregando…</p>'; return; }
   const pend = pkW.saques.filter(x => x.status === 'pendente');
-  const keep = document.getElementById('pkSaqueV'); const typed = keep ? keep.value : '';
+  const depPend = pkW.deps.filter(x => x.status === 'pendente');
+  const keepS = document.getElementById('pkSaqueV'), typedS = keepS ? keepS.value : '';
+  const keepD = document.getElementById('pkDepR'), typedD = keepD ? keepD.value : '';
+  const tabs = [['depositar', 'Depositar'], ['sacar', 'Sacar'], ['historico', 'Histórico']];
+  let body = '';
+  if (pkW.tab === 'depositar') {
+    body = `<p class="muted" style="font-size:13px">1. Escolha o valor. 2. Faça o Pix para a chave da organização. 3. Toque em <b>Já fiz o Pix</b>. As fichas entram quando a organização confirmar que o dinheiro caiu.</p>
+      <div class="row"><label style="flex:1 1 120px">Valor em reais<input id="pkDepR" type="number" inputmode="decimal" min="1" step="1" placeholder="Ex.: 20" value="${esc(typedD)}"></label><p class="muted" id="pkDepF" style="flex:1 1 120px;align-self:end;font-size:13px"></p></div>
+      ${orgPixHtml()}
+      <div class="row"><button class="primary" id="pkDepAsk">Já fiz o Pix</button></div>
+      ${depPend.length ? `<h3>Esperando a organização confirmar</h3><ul class="movs">${depPend.map(x => `<li><span>${reaisTxt(x.fichas)} → ${fichasTxt(x.fichas)}</span><b class="muted">pendente</b><small class="muted">pedido em ${new Date(x.at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</small></li>`).join('')}</ul>` : ''}`;
+  } else if (pkW.tab === 'sacar') {
+    body = `<p class="muted" style="font-size:13px">As fichas saem da carteira na hora e a organização paga o Pix na sua chave (cadastrada no saguão do truco, em Chave Pix). Mínimo de 100 fichas (R$ 1).</p>
+      <div class="row"><input id="pkSaqueV" type="number" inputmode="numeric" min="100" step="100" placeholder="Fichas para sacar" style="flex:1 1 140px" value="${esc(typedS)}"><button id="pkSaque">Pedir saque</button></div>
+      ${pend.length ? `<h3>Saques esperando pagamento</h3><ul class="movs">${pend.map(x => `<li><span>${fichasTxt(x.fichas)}</span><b>${reaisTxt(x.fichas)}</b><small class="muted">pedido em ${new Date(x.at).toLocaleDateString('pt-BR')}</small></li>`).join('')}</ul>` : ''}`;
+  } else {
+    body = pkW.movs.length ? `<ul class="movs">${pkW.movs.map(pkMovRow).join('')}</ul>` : '<p class="muted">Nenhum movimento ainda.</p>';
+  }
   el.innerHTML = `<h2>Minha carteira</h2>
     <div class="wallet"><b>${fichasTxt(pkW.saldo)}</b><span class="muted">vale ${reaisTxt(pkW.saldo)} · 100 fichas = R$ 1</span></div>
-    <p class="muted" style="font-size:13px">Para colocar fichas, combine com a organização. Para sacar, peça aqui: as fichas saem na hora e a organização paga o Pix na sua chave (cadastrada no saguão do truco).</p>
-    <div class="row"><input id="pkSaqueV" type="number" inputmode="numeric" min="100" step="100" placeholder="Fichas para sacar" style="flex:1 1 140px" value="${esc(typed)}"><button id="pkSaque">Pedir saque</button></div>
-    ${pend.length ? `<h3>Saques esperando pagamento</h3><ul class="movs">${pend.map(x => `<li><span>${fichasTxt(x.fichas)}</span><b>${reaisTxt(x.fichas)}</b><small class="muted">pedido em ${new Date(x.at).toLocaleDateString('pt-BR')}</small></li>`).join('')}</ul>` : ''}
-    ${pkW.movs.length ? `<details><summary>Últimos movimentos</summary><ul class="movs">${pkW.movs.map(pkMovRow).join('')}</ul></details>` : ''}`;
-  document.getElementById('pkSaque').onclick = pkRequestSaque;
+    <div class="seg" role="tablist" aria-label="Carteira">${tabs.map(([k, t]) => `<button type="button" role="tab" aria-selected="${k === pkW.tab}" data-wtab="${k}">${t}${k === 'depositar' && depPend.length ? ` (${depPend.length})` : k === 'sacar' && pend.length ? ` (${pend.length})` : ''}</button>`).join('')}</div>
+    ${body}`;
+  el.querySelectorAll('[data-wtab]').forEach(b => (b.onclick = () => { pkW.tab = b.dataset.wtab; try { localStorage.setItem('truco.carteira', pkW.tab); } catch {} pkRenderWallet(); }));
+  const sq = document.getElementById('pkSaque'); if (sq) sq.onclick = pkRequestSaque;
+  const dr = document.getElementById('pkDepR');
+  if (dr) {
+    const show = () => { const r = Math.floor(+dr.value || 0); document.getElementById('pkDepF').textContent = r > 0 ? `= ${fichasTxt(r * FICHAS_POR_REAL)}` : ''; };
+    dr.oninput = show; show();
+    document.getElementById('pkDepAsk').onclick = pkRequestDeposit;
+  }
+}
+async function pkRequestDeposit() {
+  const r = Math.floor(+document.getElementById('pkDepR').value || 0);
+  if (r < 1) return toast('Escreva quantos reais você mandou no Pix.');
+  if (!confirm(`Confirma que fez o Pix de R$ ${r} para a organização? Você vai receber ${fichasTxt(r * FICHAS_POR_REAL)} quando confirmarem.`)) return;
+  const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  try {
+    await db.doc('depositos/' + id).set({ key: myId, name: myNick, reais: r, fichas: r * FICHAS_POR_REAL, status: 'pendente', at: pkNow() });
+    document.getElementById('pkDepR').value = '';
+    toast('Pedido enviado. As fichas entram quando a organização confirmar o Pix.', 5000);
+  } catch { toast('Não deu para enviar o pedido. Tente de novo.'); }
 }
 async function pkRequestSaque() {
   const v = Math.floor(+document.getElementById('pkSaqueV').value || 0);
@@ -508,9 +575,10 @@ async function pkRequestSaque() {
 // ---- painel da organização: colocar fichas e pagar saques ----
 function pkWatchBank() {
   const el = document.getElementById('pkBank'); if (!el) return;
-  if (!isOrg()) { el.hidden = true; if (pkLobby && pkLobby.bank) { pkLobby.bank(); pkLobby.bank = null; } return; }
+  if (!isOrg()) { el.hidden = true; for (const u of ['bank', 'bankDeps']) if (pkLobby && pkLobby[u]) { pkLobby[u](); pkLobby[u] = null; } return; }
   el.hidden = false;
   if (!pkLobby.bank) pkLobby.bank = db.collection('saques').where('status', '==', 'pendente').onSnapshot(s => { pkW.bankSaques = s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => a.at - b.at); pkRenderBank(); }, () => {});
+  if (!pkLobby.bankDeps) pkLobby.bankDeps = db.collection('depositos').where('status', '==', 'pendente').onSnapshot(s => { pkW.bankDeps = s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => a.at - b.at); pkRenderBank(); }, () => {});
   pkRenderBank();
 }
 function pkRenderBank() {
@@ -518,6 +586,11 @@ function pkRenderBank() {
   const keepU = document.getElementById('pkDepU'), keepV = document.getElementById('pkDepV');
   const u = keepU ? keepU.value : '', v = keepV ? keepV.value : '';
   el.innerHTML = `<h2>Carteiras (organização)</h2>
+    <h3>Depósitos para confirmar</h3>
+    ${pkW.bankDeps.length ? pkW.bankDeps.map(x => `<div class="pay-row">
+        <div><b>${esc(x.name || x.key)}</b> diz que mandou <b>R$ ${esc(x.reais)}</b> = ${fichasTxt(x.fichas)}<div class="muted" style="font-size:12px">${new Date(x.at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })} · confira no app do banco antes</div></div>
+        <div class="row"><button class="primary small" data-depok="${esc(x.id)}">Recebi, colocar fichas</button><button class="danger small" data-depno="${esc(x.id)}">Não caiu</button></div>
+      </div>`).join('') : '<p class="muted">Nenhum depósito esperando.</p>'}
     <h3>Colocar ou tirar fichas</h3>
     <div class="row">
       <input id="pkDepU" placeholder="Usuário" style="flex:1 1 120px" value="${esc(u)}">
@@ -534,6 +607,8 @@ function pkRenderBank() {
   const hint = () => { const n = Math.floor(+document.getElementById('pkDepV').value || 0); document.getElementById('pkDepHint').textContent = n ? `= ${reaisTxt(n)}` : ''; };
   document.getElementById('pkDepV').oninput = hint; hint();
   el.querySelectorAll('[data-dep]').forEach(b => (b.onclick = () => pkOrgDeposit(+b.dataset.dep)));
+  el.querySelectorAll('[data-depok]').forEach(b => (b.onclick = () => pkConfirmDeposit(b.dataset.depok, true)));
+  el.querySelectorAll('[data-depno]').forEach(b => (b.onclick = () => pkConfirmDeposit(b.dataset.depno, false)));
   el.querySelectorAll('[data-hist]').forEach(b => (b.onclick = () => pkLoadHist(b.dataset.hist)));
   el.querySelectorAll('[data-paid]').forEach(b => (b.onclick = () => pkPaySaque(b.dataset.paid, true)));
   el.querySelectorAll('[data-refuse]').forEach(b => (b.onclick = () => pkPaySaque(b.dataset.refuse, false)));
@@ -547,6 +622,20 @@ async function pkOrgDeposit(sign) {
   const r = await walletMove(key, sign * n, { id: (sign > 0 ? 'dep-' : 'aj-') + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), tipo: sign > 0 ? 'deposito' : 'ajuste', name, nota: 'por ' + myNick }).catch(() => 'erro');
   if (r === 'ok') { toast(`${sign > 0 ? 'Colocou' : 'Tirou'} ${fichasTxt(n)} ${sign > 0 ? 'na' : 'da'} carteira de ${name}.`); document.getElementById('pkDepV').value = ''; }
   else toast(r === 'sem-saldo' ? `${name} não tem tudo isso na carteira.` : 'Não deu agora. Tente de novo.');
+}
+// depósito pedido pelo jogador: a organização confere o Pix e coloca as fichas
+async function pkConfirmDeposit(id, ok) {
+  const x = pkW.bankDeps.find(d => d.id === id); if (!x) return;
+  if (!confirm(ok ? `O Pix de R$ ${x.reais} de ${x.name || x.key} caiu? Vai colocar ${fichasTxt(x.fichas)} na carteira.` : `Recusar o depósito de ${x.name || x.key}? Nenhuma ficha entra.`)) return;
+  try {
+    const next = await transact('depositos/' + id, d => (d && d.status === 'pendente' ? { ...d, status: ok ? 'aprovado' : 'recusado', doneAt: pkNow(), doneBy: myId } : null));
+    if (!next) return toast('Esse depósito já foi resolvido.');
+    if (ok) {
+      const r = await walletMove(x.key, x.fichas, { id: 'dep-' + id, tipo: 'deposito', name: x.name, nota: `Pix de R$ ${x.reais} confirmado por ${myNick}` });
+      if (r !== 'ok' && r !== 'repetido') return toast('O pedido foi marcado, mas não deu para colocar as fichas. Use "Colocar" abaixo.');
+    }
+    toast(ok ? `Colocou ${fichasTxt(x.fichas)} na carteira de ${x.name || x.key}.` : 'Depósito recusado.');
+  } catch { toast('Não deu agora. Tente de novo.'); }
 }
 // histórico do jogador para conferir antes de pagar
 async function pkLoadHist(key) {
@@ -575,12 +664,14 @@ async function pkPaySaque(id, paid) {
 
 function pkRenderTables(list) {
   const el = document.getElementById('pkTables'); if (!el) return;
-  el.innerHTML = `<h2>Mesas de poker</h2>${list.length ? `<div class="mesas-list">${list.map(t => {
-    const filled = t.seats.filter(Boolean).length;
+  const mineFirst = [...list].sort((a, b) => (b.seats.includes(myId) ? 1 : 0) - (a.seats.includes(myId) ? 1 : 0));
+  el.innerHTML = `<h2>Mesas de poker</h2>${list.length ? `<div class="mesas-list">${mineFirst.map(t => {
+    const filled = t.seats.filter(Boolean).length, mine = !!myId && t.seats.includes(myId);
     const status = t.type === 'sng' ? (t.phase === 'over' ? 'terminou' : t.sng.startedAt ? 'em andamento' : `${filled}/${t.n} inscritos`) : `${filled}/${t.n} sentados`;
-    return `<div class="mesa-item"><div><b>${esc(t.name)}</b> <span class="tag">${status}</span><div class="muted" style="font-size:13px">${esc(pkTypeLabel(t))}</div></div><button class="small" data-pkopen="${esc(t.code)}">Abrir</button></div>`;
+    return `<div class="mesa-item ${mine ? 'mine' : ''}"><div><b>${esc(t.name)}</b> <span class="tag">${status}</span>${mine ? ' <span class="tag pos">você está aqui</span>' : ''}<div class="muted" style="font-size:13px">${esc(pkTypeLabel(t))}</div></div><div class="row" style="flex-wrap:nowrap;gap:6px">${isOrg() ? `<button class="small danger" data-pkdel="${esc(t.code)}" title="Remover mesa">Remover</button>` : ''}<button class="small ${mine ? 'primary' : ''}" data-pkopen="${esc(t.code)}">${mine ? 'Voltar à mesa' : 'Abrir'}</button></div></div>`;
   }).join('')}</div>` : '<p class="muted">Nenhuma mesa aberta agora. A organização cria as mesas.</p>'}`;
   el.querySelectorAll('[data-pkopen]').forEach(b => (b.onclick = () => openPokerTable(b.dataset.pkopen)));
+  el.querySelectorAll('[data-pkdel]').forEach(b => (b.onclick = () => pkOrgRemove(b.dataset.pkdel)));
 }
 function pkRenderCreate() {
   const el = document.getElementById('pkCreate'); if (!el) return;
@@ -606,7 +697,12 @@ function pkRenderCreate() {
       <label style="flex:1 1 100px">Entrada<select id="pkFee">${PK_SNG_FEES.map(v => `<option value="${v}" ${v === 1000 ? 'selected' : ''}>${v.toLocaleString('pt-BR')} (${reaisTxt(v)})</option>`).join('')}</select></label>
       <label style="flex:1 1 100px">Fichas do torneio<select id="pkStack"><option>1000</option><option selected>1500</option><option>3000</option></select></label>
       <label style="flex:1 1 100px">Blinds sobem a cada<select id="pkLevel"><option value="3">3 min</option><option value="5" selected>5 min</option><option value="8">8 min</option><option value="10">10 min</option></select></label>
-      <label style="flex:1 1 160px">Prêmio (soma das entradas)<select id="pkPrize"><option value="1">Tudo para o 1º</option><option value="2">1º 65% e 2º 35% (4+ jogadores)</option></select></label>
+    </div>
+    <div class="row" data-for="sng" hidden>
+      <p class="muted" style="font-size:13px;flex:1 1 100%">As fichas do torneio não valem dinheiro. O prêmio é a soma das entradas, dividido pela colocação (precisa somar 100%):</p>
+      <label style="flex:1 1 70px">1º lugar %<input id="pkP1" type="number" inputmode="numeric" min="0" max="100" value="60"></label>
+      <label style="flex:1 1 70px">2º lugar %<input id="pkP2" type="number" inputmode="numeric" min="0" max="100" value="30"></label>
+      <label style="flex:1 1 70px">3º lugar %<input id="pkP3" type="number" inputmode="numeric" min="0" max="100" value="10"></label>
     </div>
     <div class="row"><button class="primary" id="pkCreateBtn">Criar mesa</button></div>`;
   let type = 'cash';
@@ -630,17 +726,26 @@ async function pkCreateTable(type) {
     const [sb, bb] = PK_CASH_BLINDS[+document.getElementById('pkBlinds').value];
     Object.assign(st, { unit: 'chips', sb, bb, buyMin: bb * 20, buyMax: bb * 100 });
   } else {
-    Object.assign(st, { unit: 'chips', sb: PK_SNG_LEVELS[0][0], bb: PK_SNG_LEVELS[0][1], sng: { fee: +document.getElementById('pkFee').value, stack: +document.getElementById('pkStack').value, levelMin: +document.getElementById('pkLevel').value, prize: +document.getElementById('pkPrize').value, startedAt: 0, level: 0, out: [], paid: [] } });
+    const split = ['pkP1', 'pkP2', 'pkP3'].map(id => Math.max(0, Math.round(+document.getElementById(id).value || 0)));
+    if (split.reduce((a, b) => a + b, 0) !== 100) return toast('As porcentagens do prêmio precisam somar 100%.');
+    if (!split[0] || (split[2] && !split[1])) return toast('O 1º lugar precisa ter prêmio, e o 3º só recebe se o 2º também receber.');
+    if (split[0] < split[1] || split[1] < split[2]) return toast('O 1º lugar precisa receber pelo menos o mesmo que o 2º, e o 2º o mesmo que o 3º.');
+    if (split.filter(Boolean).length > n) return toast('Tem mais lugares premiados do que lugares na mesa.');
+    Object.assign(st, { unit: 'chips', sb: PK_SNG_LEVELS[0][0], bb: PK_SNG_LEVELS[0][1], sng: { fee: +document.getElementById('pkFee').value, stack: +document.getElementById('pkStack').value, levelMin: +document.getElementById('pkLevel').value, split, startedAt: 0, level: 0, out: [], paid: [] } });
   }
   try { await db.doc('poker/' + code).set(st); openPokerTable(code); }
   catch { toast('Não deu para criar a mesa. Só a organização pode criar.'); }
 }
-// mesa abandonada: fecha e faz o acerto (quem chegar primeiro no saguão faz)
-async function pkAutoClose(code) {
+// A mesa fica aberta mesmo sem ninguém; só a organização remove.
+// Ao remover: as fichas de quem está sentado voltam para a carteira; Sit & Go que
+// não terminou devolve a entrada de todos.
+async function pkOrgRemove(code) {
+  if (!isOrg()) return;
+  if (!confirm('Remover esta mesa? As fichas de quem está sentado voltam para as carteiras (no Sit & Go que não terminou, a entrada volta para todos).')) return;
   let closed = null;
   try {
     closed = await transact('poker/' + code, st => {
-      if (!st || st.closedAt || pkNow() - (st.aliveAt || st.updatedAt || 0) <= PK.EMPTY_MS) return null;
+      if (!st || st.closedAt) return null;
       if (st.phase === 'hand' && st.hand) { for (const s in st.hand.contrib) st.stacks[st.seats[s]] += st.hand.contrib[s]; st.hand = null; }
       if (st.type === 'sng' && st.phase !== 'over') {
         // Sit & Go abandonado no meio: a entrada volta para todos
@@ -651,7 +756,8 @@ async function pkAutoClose(code) {
       return st;
     });
   } catch {}
-  if (closed) { await pkPayouts(code, closed); if (!closed.cancelled) await pkClaimRecord(code); }
+  if (closed) { await pkPayouts(code, closed); if (!closed.cancelled) await pkClaimRecord(code); toast('Mesa removida.'); }
+  else toast('Essa mesa já tinha sido removida.');
 }
 function pkRulesHtml() {
   const hands = [['Royal flush', 'A K Q J 10 do mesmo naipe'], ['Straight flush', 'sequência do mesmo naipe'], ['Quadra', '4 cartas iguais'], ['Full house', 'trinca + par'], ['Flush', '5 do mesmo naipe'], ['Sequência', '5 em ordem'], ['Trinca', '3 iguais'], ['Dois pares', ''], ['Par', ''], ['Carta alta', '']];
@@ -659,7 +765,8 @@ function pkRulesHtml() {
     <p class="muted">Texas Hold'em sem limite. Cada um recebe 2 cartas fechadas; na mesa saem 5 abertas (flop com 3, turn e river). Ganha quem fizer a melhor mão de 5 cartas juntando as suas com as da mesa, ou quem continuar quando todos desistirem.</p>
     <ol class="pk-ranks">${hands.map(([a, b]) => `<li><b>${a}</b>${b ? ` <span class="muted">— ${b}</span>` : ''}</li>`).join('')}</ol>
     <p class="muted" style="font-size:13px">Cada jogada tem ${PK.ACT_MS / 1000} segundos. Se o tempo acabar, o jogo passa (ou desiste, se tiver aposta) e você fica ausente até tocar em Voltar.</p>
-    <p class="muted" style="font-size:13px">As mesas valem fichas da sua carteira (100 fichas = R$ 1). A organização coloca as fichas e paga os saques.</p>`;
+    <p class="muted" style="font-size:13px">As mesas valem fichas da sua carteira (100 fichas = R$ 1). A organização coloca as fichas e paga os saques.</p>
+    <p class="muted" style="font-size:13px"><b>Mesa de fichas:</b> ao levantar (ou ir para o saguão) você sai na hora com as fichas que tem na frente; se estiver numa mão, desiste dela e o que já apostou fica no pote. <b>Sit &amp; Go:</b> as fichas do torneio não valem dinheiro; o prêmio é a soma das entradas, dividido pela colocação (1º, 2º e 3º, como a organização definir). Pode ir ao saguão e voltar, seu lugar fica guardado (sem você, o jogo passa ou desiste por você). Se abandonar o torneio, perde a entrada.</p>`;
 }
 
 /* =========================================================
@@ -866,23 +973,32 @@ function pkBuyIn(i, rebuy) {
   };
 }
 function pkStandUp() {
-  const s = pkMySeat(); if (s < 0) return;
-  if (pk.st.type === 'sng' && pk.st.sng.startedAt) return toast('No Sit & Go não dá para levantar no meio. Se sair, suas fichas continuam pagando os blinds.');
-  pkCommit(st => {
+  const s = pkMySeat(); if (s < 0) return Promise.resolve(null);
+  if (pk.st.type === 'sng' && pk.st.sng.startedAt) return Promise.resolve(null);
+  return pkCommit(st => {
     const k = pk.me, seat = st.seats.indexOf(k); if (seat < 0) return false;
     if (st.type === 'sng') { st.seats[seat] = null; delete st.stacks[k]; st.sng.paid = (st.sng.paid || []).filter(x => x !== k); pkPayout(st, k, st.sng.fee, 'devolucao'); return; }
-    const h = st.hand;
-    if (st.phase === 'hand' && h && h.inHand.includes(seat) && !h.folded[seat]) {
-      st.leaving[k] = true;
-      if (h.toAct === seat) pkAct(st, seat, 'fold');
-      return;
-    }
+    pkFoldOut(st, seat);
     pkCashOut(st, k);
+  });
+}
+// Sit & Go: abandonar = desistir do torneio; perde a entrada e as fichas do torneio
+function pkAbandon() {
+  if (!confirm('Abandonar o torneio? Você perde a entrada e todas as fichas do torneio.')) return;
+  pkCommit(st => {
+    const k = pk.me, seat = st.seats.indexOf(k);
+    if (seat < 0 || st.type !== 'sng' || !st.sng.startedAt || st.phase === 'over' || st.closedAt) return false;
+    pkFoldOut(st, seat);
+    st.stacks[k] = 0;
+    if (!st.sng.out.includes(k)) st.sng.out.push(k);
+    st.seats[seat] = null;
+    (st.sng.gaveUp ||= []).push(k);
+    if (st.phase !== 'hand') pkCheckSngOver(st);
   });
 }
 function pkBack() { pkCommit(st => { if (!st.away || !st.away[pk.me]) return false; delete st.away[pk.me]; }); }
 async function pkCloseTable() {
-  if (!confirm('Encerrar a mesa? As fichas de quem está sentado voltam para as carteiras.')) return;
+  if (!confirm('Remover a mesa? As fichas de quem está sentado voltam para as carteiras.')) return;
   const next = await pkCommit(st => {
     if (st.closedAt) return false;
     if (st.phase === 'hand') { st.closing = true; return; }
@@ -930,7 +1046,7 @@ function pkRender() {
         ${st.result && st.result.names && st.result.names[s] && st.phase === 'handEnd' ? `<span class="phand">${esc(st.result.names[s])}</span>` : ''}
       </div>`;
     const bet = h && st.phase === 'hand' ? h.bets[s] || 0 : 0;
-    if (bet) { const b = pos(s, s === me ? [24, 18] : [27, 21]); seatsHtml += `<div class="pbet" style="left:${b.x}%;top:${b.y}%"><i></i>${pkMoney(st, bet)}</div>`; }
+    if (bet) { const b = pos(s, s === me ? [24, 18] : [27, 21]); seatsHtml += `<div class="pbet" style="left:${b.x}%;top:${b.y}%"><i></i>${h.allin[s] ? 'All-in ' : ''}${pkMoney(st, bet)}</div>`; }
   }
   // meio da mesa: cartas abertas e pote
   const board = h && st.phase !== 'waiting' ? h.board : [];
@@ -959,11 +1075,14 @@ function pkRender() {
   const extra = [];
   if (seated && st.away && st.away[k] && st.stacks[k] > 0) extra.push('<button class="primary small" data-pk="back">Voltar ao jogo</button>');
   if (seated && !p.solo && st.type === 'cash' && !st.closedAt && (st.stacks[k] || 0) < st.buyMax && !(st.phase === 'hand' && inHand(me) && !h.folded[me])) extra.push(`<button class="small" data-pk="rebuy">${st.stacks[k] ? 'Recomprar' : 'Comprar fichas'}</button>`);
-  if (seated && !st.closedAt && !(st.type === 'sng' && st.sng.startedAt) && !p.solo) extra.push(`<button class="small" data-pk="stand">${st.leaving && st.leaving[k] ? 'Saindo no fim da mão…' : 'Levantar'}</button>`);
+  if (seated && !st.closedAt && !(st.type === 'sng' && st.sng.startedAt) && !p.solo) extra.push(`<button class="small" data-pk="stand">${st.type === 'sng' ? 'Sair (a entrada volta)' : `Levantar com ${pkMoney(st, st.stacks[k])}`}</button>`);
+  if (seated && !p.solo && st.type === 'sng' && st.sng.startedAt && st.phase !== 'over' && !st.closedAt) extra.push('<button class="danger small" data-pk="abandon">Abandonar torneio</button>');
   if (st.type === 'sng' && !st.sng.startedAt && (isOrg() || seated) && st.seats.filter(Boolean).length >= 2 && !p.solo) extra.push('<button class="primary small" data-pk="startsng">Começar o Sit &amp; Go</button>');
-  if (!p.solo && st.type === 'cash' && isOrg() && !st.closedAt) extra.push(`<button class="danger small" data-pk="close">${st.closing ? 'Fecha no fim da mão…' : 'Encerrar mesa'}</button>`);
-  if (p.solo && st.stacks[k] === 0) extra.push('<button class="primary small" data-pk="solorebuy">Recomeçar com fichas</button>');
-  const lvl = st.type === 'sng' && st.sng.startedAt ? `<span class="tag">blinds ${pkBlindsLabel(st)} · <span id="pkLevel"></span></span>` : `<span class="tag">blinds ${pkBlindsLabel(st)}</span>`;
+  if (!p.solo && st.type === 'cash' && isOrg() && !st.closedAt) extra.push(`<button class="danger small" data-pk="close">${st.closing ? 'Fecha no fim da mão…' : 'Remover mesa'}</button>`);
+  if (!p.solo && st.type === 'sng' && isOrg() && !st.closedAt && st.phase !== 'over') extra.push('<button class="danger small" data-pk="remove">Remover mesa</button>');
+  if (p.solo && st.stacks[k] === 0 && st.phase !== 'hand') extra.push('<button class="primary small" data-pk="solorebuy">Recomeçar com fichas</button>');
+  const lvl = (st.type === 'sng' && st.sng.startedAt ? `<span class="tag">blinds ${pkBlindsLabel(st)} · <span id="pkLevel"></span></span>` : `<span class="tag">blinds ${pkBlindsLabel(st)}</span>`)
+    + (st.type === 'sng' && !p.solo ? ` <span class="tag" title="Prêmio por colocação: ${pkSplitLabel(st.sng)} de ${fichasTxt(st.sng.fee * (st.sng.paid || []).length)}">🏆 ${pkSplit(st.sng).filter(Boolean).join('/')}%</span>` : '');
   const bar = `<div class="tablebar">${p.solo ? '<span class="tag">Treino</span>' : `<span class="code">${esc(st.name || st.code)}</span>`} ${lvl}<button class="small" data-leave>Saguão</button></div>`;
   $app.innerHTML = `
   <div class="game poker">
@@ -974,14 +1093,23 @@ function pkRender() {
       <div class="hand phand-mine">${mine}</div>
     </div>
   </div>`;
-  $app.querySelectorAll('[data-leave]').forEach(b => (b.onclick = () => { pokerLeave(); history.replaceState(null, '', location.pathname); showLobby(); }));
+  $app.querySelectorAll('[data-leave]').forEach(b => (b.onclick = async () => {
+    if (seated && !p.solo && st.type === 'cash' && !st.closedAt) {
+      if (!confirm(`Ir para o saguão? Você levanta com ${pkMoney(st, st.stacks[k])} fichas, que voltam para a carteira. Se estiver numa mão, desiste dela.`)) return;
+      await pkStandUp();
+    }
+    pokerLeave(); history.replaceState(null, '', location.pathname); showLobby();
+    if (seated && !p.solo && st.type === 'sng' && st.sng.startedAt && st.phase !== 'over') toast('Seu lugar no torneio continua guardado. Volte pela lista de mesas.', 5000);
+  }));
   $app.querySelectorAll('[data-pksit]').forEach(b => (b.onclick = () => pkSit(+b.dataset.pksit)));
   $app.querySelectorAll('[data-pk]').forEach(b => (b.onclick = () => {
     const a = b.dataset.pk;
     if (a === 'back') pkBack();
     else if (a === 'rebuy') pkBuyIn(me, true);
-    else if (a === 'stand') pkStandUp();
+    else if (a === 'stand') { if (st.type !== 'cash' || confirm(`Levantar com ${pkMoney(st, st.stacks[k])} fichas? Se estiver numa mão, você desiste dela e o que já apostou fica no pote.`)) pkStandUp(); }
+    else if (a === 'abandon') pkAbandon();
     else if (a === 'close') pkCloseTable();
+    else if (a === 'remove') pkOrgRemove(pk.code);
     else if (a === 'startsng') pkCommit(s => { if (s.sng.startedAt || s.seats.filter(Boolean).length < 2) return false; pkStartSng(s); });
     else if (a === 'solorebuy') pkCommit(s => { s.stacks[pk.me] = 2000; delete s.away[pk.me]; });
   }));
@@ -998,7 +1126,7 @@ function pkResultText(st) {
 }
 function pkWaitingText(st) {
   const n = st.seats.filter(Boolean).length;
-  if (st.type === 'sng' && !st.sng.startedAt) return `Sit &amp; Go: ${n} de ${st.n} inscritos. Começa quando encher ou quando tocarem em Começar. Entrada ${fichasTxt(st.sng.fee)}.`;
+  if (st.type === 'sng' && !st.sng.startedAt) return `Sit &amp; Go: ${n} de ${st.n} inscritos. Começa quando encher ou quando tocarem em Começar.<br>Entrada ${fichasTxt(st.sng.fee)} · prêmio por colocação: ${pkSplitLabel(st.sng)} das entradas.<br><span class="muted">As fichas do torneio não valem dinheiro.</span>`;
   return n < 2 ? 'Esperando mais jogadores sentarem…' : 'Esperando jogadores com fichas…';
 }
 function pkEndText(st) {
@@ -1007,7 +1135,7 @@ function pkEndText(st) {
     const order = [...st.sng.out].reverse();
     const net = pkNets(st);
     const prize = pkSngPrizes(st);
-    return `<b>Fim do Sit &amp; Go</b><br>${order.slice(0, 3).map((k, i) => `${i + 1}º ${esc(st.names[k] || k)}${prize[k] ? ` <b>+${prize[k].toLocaleString('pt-BR')} fichas</b>` : ''}`).join('<br>')}<br><span class="muted">O prêmio vai direto para a carteira.</span>`;
+    return `<b>Fim do Sit &amp; Go</b><br>${order.slice(0, Math.max(3, Object.keys(prize).length)).map((k, i) => `${i + 1}º ${esc(st.names[k] || k)}${prize[k] ? ` <b>+${fichasTxt(prize[k])}</b> (${reaisTxt(prize[k])})` : ''}`).join('<br>')}<br><span class="muted">O prêmio vai direto para a carteira.</span>`;
   }
   return 'Mesa encerrada. As fichas de cada um voltaram para a carteira.';
 }
@@ -1046,7 +1174,7 @@ function pkBindActions(st, me) {
   $app.querySelectorAll('[data-to]').forEach(b => (b.onclick = () => { r.value = b.dataset.to; label(); }));
   $app.querySelectorAll('[data-pa]').forEach(b => (b.onclick = () => {
     const a = b.dataset.pa;
-    if (a === 'raise') { const to = +r.value; if (to >= +r.max) shout('All-in!', '', ''); pkDo('raise', to); }
+    if (a === 'raise') pkDo('raise', +r.value);
     else pkDo(a);
   }));
 }
@@ -1069,8 +1197,7 @@ function pkAnimate(st) {
   }
   const last = h && h.last;
   if (!fresh && last && last.at !== p.animLast) {
-    if (last.a === 'allin') { if (st.seats[last.seat] !== p.me) shout('All-in!', st.names[st.seats[last.seat]] || '', ''); }
-    else if (last.a === 'fold') {} else cardSound(0.35);
+    if (last.a !== 'fold') cardSound(0.35);
   }
   p.animKey = key; p.animBoard = h ? h.board.length : 0; p.animHid = h ? h.hid : null; p.animLast = last ? last.at : null;
 }
