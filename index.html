@@ -480,6 +480,11 @@ body.in-game .games { display: none; }
 .pk-modal-card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px; display: grid; gap: 12px; width: min(380px, 100%); }
 .pk-buy { display: flex; gap: 10px; align-items: center; }
 .pk-buy b { font-size: 20px; min-width: 84px; text-align: right; font-variant-numeric: tabular-nums; }
+.end-pop, .pk-pop { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 6; display: grid; gap: 10px; justify-items: stretch; text-align: center;
+  width: min(300px, 86%); padding: 16px 18px; border-radius: 16px; background: rgba(9, 32, 24, .95); border: 2px solid var(--brass); box-shadow: 0 18px 50px rgba(0,0,0,.6); }
+.end-pop > b, .pk-pop > b { font-family: var(--display); font-weight: 400; font-size: 24px; color: var(--brass); }
+.end-pop button, .pk-pop button { width: 100%; padding: 12px 14px; font-size: 16px; }
+.pk-pop .presult { background: none; padding: 0; }
 .pk-ranks { margin: 0; padding-left: 22px; display: grid; gap: 2px; font-size: 14px; }
 .wallet { display: grid; gap: 2px; padding: 12px 14px; border-radius: 12px; background: var(--felt-deep); border: 1px solid var(--line); }
 .wallet b { font-family: var(--display); font-weight: 400; font-size: 28px; color: var(--brass); }
@@ -2874,6 +2879,16 @@ function render() {
   if (!seated) msg = '<span class="muted">Você está assistindo.</span> ' + msg;
 
   const scoreUs = Math.min(st.score[us], 12), scoreThem = Math.min(st.score[them], 12);
+  // fim da partida: janela no meio da mesa com o botão de levantar
+  let endPop = '';
+  if (st.phase === 'gameEnd' && st.games && st.games[0]) {
+    const w0 = st.games[0].winner;
+    const title = seated ? (w0 === us ? 'Vocês ganharam!' : 'Vocês perderam') : teamLabel(w0) + ' ganhou';
+    const btns = solo ? '<button class="primary" data-act="newGame">Nova partida</button><button data-act="lobby">Levantar da mesa</button>'
+      : st.torneio ? '<button class="primary" data-act="tour">Voltar ao torneio</button>'
+      : '<button class="primary" data-act="lobby">Levantar da mesa</button>';
+    endPop = `<div class="end-pop" role="dialog" aria-label="Fim da partida"><b>${title}</b><span>${Math.min(st.score[w0], 12)} a ${st.score[1 - w0]}</span>${btns}</div>`;
+  }
   saveChatDraft();
   const prevHand = captureHand();
   $app.innerHTML = `
@@ -2887,7 +2902,7 @@ function render() {
         <div class="score"><h3>Vazas</h3><div class="pips" style="margin-top:8px">${pips}</div></div>
         ${viraHtml}
       </div>
-      <div class="mesa ${st.n === 6 ? 'six' : ''}">${seatsHtml}${playedHtml}${lastTrick}${banner}
+      <div class="mesa ${st.n === 6 ? 'six' : ''}">${seatsHtml}${playedHtml}${lastTrick}${banner}${endPop}
         ${seated ? (() => { const p = pos(me, [40, 40]); return `<div class="seat us me ${me === actor ? 'turn' : ''}" data-key="${esc(st.seats[me] || '')}" style="left:${p.x}%;top:${Math.min(p.y, 90)}%">${avatarHtml(st.seats[me], nick(st, me))}<span class="name">${esc(nick(st, me))} (você)</span></div>`; })() : ''}
       </div>
       ${solo ? '' : `<div class="mtools">${voiceOK() && canChat() ? '<button type="button" class="ptt rbtn" data-ptt aria-label="Segure para falar com a mesa">🎤</button>' : ''}<button type="button" class="chat-toggle rbtn" data-chatopen aria-label="Abrir conversa">💬${chatUnread ? `<span class="badge">${chatUnread}</span>` : ''}</button></div>`}

@@ -29,10 +29,10 @@ const PK = {
 };
 const PRANKS = '23456789TJQKA';
 const PSUITS = ['p', 'c', 'e', 'o'];
-const PK_CASH_BLINDS = [[5, 10], [10, 20], [25, 50], [50, 100], [100, 200], [250, 500]]; // em fichas
+const PK_CASH_BLINDS = [[5, 10], [10, 20], [25, 50], [50, 100], [100, 200], [250, 500], [500, 1000], [1000, 2000], [2500, 5000]]; // em fichas
 const PK_SNG_FEES = [500, 1000, 2000, 5000, 10000];               // entrada do Sit & Go, em fichas
 const FICHAS_POR_REAL = 100;
-const PK_SNG_LEVELS = [[10, 20], [15, 30], [25, 50], [50, 100], [75, 150], [100, 200], [150, 300], [200, 400], [300, 600], [400, 800], [500, 1000], [750, 1500], [1000, 2000], [1500, 3000]];
+const PK_SNG_LEVELS = [[10, 20], [15, 30], [25, 50], [50, 100], [75, 150], [100, 200], [150, 300], [200, 400], [300, 600], [400, 800], [500, 1000], [750, 1500], [1000, 2000], [1500, 3000], [2000, 4000], [2500, 5000]];
 const PK_HAND_NAMES = ['Carta alta', 'Par', 'Dois pares', 'Trinca', 'Sequência', 'Flush', 'Full house', 'Quadra', 'Straight flush'];
 const PK_BOT_NAMES = ['Tião', 'Zefa', 'Dito', 'Nena', 'Juca'];
 
@@ -1056,7 +1056,20 @@ function pkRender() {
   if (pot) center += `<div class="ppot">Pote ${pkMoney(st, pot)}</div>`;
   if (st.phase === 'handEnd' && st.result) center += `<div class="presult">${pkResultText(st)}</div>`;
   if (st.phase === 'waiting') center += `<div class="presult">${pkWaitingText(st)}</div>`;
-  if (st.phase === 'over' || st.phase === 'closed') center += `<div class="presult">${pkEndText(st)}</div>`;
+  // janela no meio da mesa: fim do torneio/mesa, ou as suas fichas acabaram
+  let pop = '';
+  const myStack = seated ? st.stacks[p.me] || 0 : 0;
+  const playingNow = st.phase === 'hand' && h && inHand(me) && !h.folded[me];
+  if (st.phase === 'over' || st.phase === 'closed') {
+    pop = `<div class="pk-pop" role="dialog" aria-label="Fim"><div class="presult">${pkEndText(st)}</div><button class="primary" data-pk="exit">Levantar da mesa</button></div>`;
+  } else if (seated && myStack === 0 && !playingNow) {
+    if (p.solo) pop = '<div class="pk-pop" role="dialog"><b>Suas fichas acabaram</b><button class="primary" data-pk="solorebuy">Recomeçar com fichas</button><button data-pk="exit">Sair da mesa</button></div>';
+    else if (st.type === 'cash') pop = `<div class="pk-pop" role="dialog"><b>Suas fichas acabaram</b><span class="muted">Na carteira: ${fichasTxt(p.saldo)}</span><button class="primary" data-pk="rebuy">Comprar fichas</button><button data-pk="watch">Sair da mesa e assistir</button><button data-pk="exit">Sair da mesa</button></div>`;
+    else if (st.type === 'sng' && st.sng.startedAt && !p.dismissElim) {
+      const place = (st.sng.paid || []).length - st.sng.out.indexOf(p.me);
+      pop = `<div class="pk-pop" role="dialog"><b>Você foi eliminado</b><span>${place > 0 ? place + 'º lugar' : ''}</span><button class="primary" data-pk="watchsng">Assistir o torneio</button><button data-pk="exit">Sair da mesa</button></div>`;
+    }
+  }
 
   // minha mão e ações
   let mine = '', acts = '', msg = '';
@@ -1080,7 +1093,6 @@ function pkRender() {
   if (st.type === 'sng' && !st.sng.startedAt && (isOrg() || seated) && st.seats.filter(Boolean).length >= 2 && !p.solo) extra.push('<button class="primary small" data-pk="startsng">Começar o Sit &amp; Go</button>');
   if (!p.solo && st.type === 'cash' && isOrg() && !st.closedAt) extra.push(`<button class="danger small" data-pk="close">${st.closing ? 'Fecha no fim da mão…' : 'Remover mesa'}</button>`);
   if (!p.solo && st.type === 'sng' && isOrg() && !st.closedAt && st.phase !== 'over') extra.push('<button class="danger small" data-pk="remove">Remover mesa</button>');
-  if (p.solo && st.stacks[k] === 0 && st.phase !== 'hand') extra.push('<button class="primary small" data-pk="solorebuy">Recomeçar com fichas</button>');
   const lvl = (st.type === 'sng' && st.sng.startedAt ? `<span class="tag">blinds ${pkBlindsLabel(st)} · <span id="pkLevel"></span></span>` : `<span class="tag">blinds ${pkBlindsLabel(st)}</span>`)
     + (st.type === 'sng' && !p.solo ? ` <span class="tag" title="Prêmio por colocação: ${pkSplitLabel(st.sng)} de ${fichasTxt(st.sng.fee * (st.sng.paid || []).length)}">🏆 ${pkSplit(st.sng).filter(Boolean).join('/')}%</span>` : '');
   const bar = `<div class="tablebar">${p.solo ? '<span class="tag">Treino</span>' : `<span class="code">${esc(st.name || st.code)}</span>`} ${lvl}<button class="small" data-leave>Saguão</button></div>`;
@@ -1088,7 +1100,7 @@ function pkRender() {
   <div class="game poker">
     <div class="board">
       ${bar}
-      <div class="mesa pmesa">${seatsHtml}<div class="pcenter">${center}</div></div>
+      <div class="mesa pmesa">${seatsHtml}<div class="pcenter">${center}</div>${pop}</div>
       <div class="actions"><p class="msg">${clock}${msg}</p>${acts}${extra.length ? `<div class="row" style="justify-content:center">${extra.join('')}</div>` : ''}</div>
       <div class="hand phand-mine">${mine}</div>
     </div>
@@ -1110,6 +1122,9 @@ function pkRender() {
     else if (a === 'abandon') pkAbandon();
     else if (a === 'close') pkCloseTable();
     else if (a === 'remove') pkOrgRemove(pk.code);
+    else if (a === 'watch') pkStandUp();
+    else if (a === 'watchsng') { p.dismissElim = true; pkRender(); }
+    else if (a === 'exit') pkExit();
     else if (a === 'startsng') pkCommit(s => { if (s.sng.startedAt || s.seats.filter(Boolean).length < 2) return false; pkStartSng(s); });
     else if (a === 'solorebuy') pkCommit(s => { s.stacks[pk.me] = 2000; delete s.away[pk.me]; });
   }));
@@ -1117,6 +1132,13 @@ function pkRender() {
   if (st.phase === 'over' && !st.closedAt && seated && !p.solo) pkSngFinish();
   pkAnimate(st);
   if (typeof placeMusic === 'function') placeMusic();
+}
+// levantar e ir para o saguão (na mesa de fichas, as fichas voltam para a carteira)
+async function pkExit() {
+  const p = pk; if (!p) return;
+  const st = p.st;
+  if (!p.solo && pkMySeat() >= 0 && st.type === 'cash' && !st.closedAt) await pkStandUp();
+  pokerLeave(); history.replaceState(null, '', location.pathname); showLobby();
 }
 function pkResultText(st) {
   const r = st.result, name = s => esc(st.names[st.seats[s]] || '');
