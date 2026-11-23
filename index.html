@@ -797,7 +797,8 @@ const AUTH_MSG = {
 let db = null, myId = null, canWrite = true, localMode = false;
 let cur = null, code = null, unsubTable = null, unsubList = null, busy = false, cover = false;
 let myNick = '', account = null, unsubRank = null;
-const CHIP_VALUES = [1, 2, 5, 10, 20, 50, 100];
+const CHIP_VALUES = [0, 1, 2, 5, 10, 20, 50, 100]; // entrada por jogador em reais (0 = grátis)
+const stakeLabel = v => (+v ? `R$ ${v}` : 'grátis');
 try { account = JSON.parse(localStorage.getItem('truco:conta') || 'null'); } catch {}
 if (account) { myId = account.key; myNick = account.name; }
 
@@ -996,7 +997,7 @@ function showLobby() {
   if (typeof pokerLeave === 'function') pokerLeave();
   if (currentGame === 'poker' && typeof showPokerLobby === 'function') { pkBindLogout(); return showPokerLobby(); }
   if (currentGame === 'cacheta') { pkBindLogout(); return showCachetaSoon(); }
-  const chipOpts = CHIP_VALUES.map(v => `<option value="${v}" ${v === 5 ? 'selected' : ''}>$ ${v}</option>`).join('');
+  const chipOpts = CHIP_VALUES.map(v => `<option value="${v}" ${v === 5 ? 'selected' : ''}>${v ? `R$ ${v}` : 'Grátis (sem valer saldo)'}</option>`).join('');
   const accountPanel = account ? '' : `
       <section class="panel">
         <h2 id="lgTitle">Entrar</h2>
@@ -1026,11 +1027,11 @@ function showLobby() {
           <label style="flex:1 1 120px">Jogadores
             <select id="n"><option value="2" selected>1x1</option><option value="4">2x2</option><option value="6">3x3</option></select>
           </label>
-          <label style="flex:1 1 120px">Valor
+          <label style="flex:1 1 120px">Entrada por jogador
             <select id="stake">${chipOpts}</select>
           </label>
         </div>
-        <p class="muted" style="font-size:13px">Cada partida vale o valor escolhido. O jogo só registra o saldo; o acerto de verdade é entre vocês, fora daqui.</p>
+        <p class="muted" style="font-size:13px">A entrada sai do saldo da sua Carteira quando a partida começa. Quem ganha leva o pote, menos a taxa da casa (<span id="taxaPartida">${esc(String(window.TAXA_PARTIDA ?? 2).replace('.', ','))}</span>%). Se todo mundo sair da mesa no meio, cada um recebe a entrada de volta.</p>
         <div class="row"><button class="primary" id="create">Criar e sentar</button></div>
       </section>
       <section class="panel">
@@ -1097,7 +1098,7 @@ function showLobby() {
     el.innerHTML = open.map(d => {
       const t = d.data(); const filled = t.seats.filter(Boolean).length;
       const status = t.phase === 'lobby' ? `${filled}/${t.n} sentados` : `partida ${t.gameNo} · ${Math.min(t.score[0],12)}×${Math.min(t.score[1],12)}`;
-      return `<div class="mesa-item"><div><span class="code">${esc(t.code)}</span> <span class="tag">${modeLabel(t.n)} · $ ${esc(t.stake)}</span><div class="muted" style="font-size:13px">${esc(status)}</div></div><button class="small" data-open="${esc(t.code)}">Abrir</button></div>`;
+      return `<div class="mesa-item"><div><span class="code">${esc(t.code)}</span> <span class="tag">${modeLabel(t.n)} · ${esc(stakeLabel(t.stake))}</span><div class="muted" style="font-size:13px">${esc(status)}</div></div><button class="small" data-open="${esc(t.code)}">Abrir</button></div>`;
     }).join('');
     el.querySelectorAll('[data-open]').forEach(b => (b.onclick = () => openTable(b.dataset.open)));
   }, () => {});
@@ -1327,7 +1328,7 @@ async function confirmPayment(id) {
 
 // Fim da partida: quem perdeu vê a tela grande com a chave de quem ganhou.
 function maybeShowPayOverlay(st) {
-  if (!st.stake) return;
+  if (!st.stake || st.aposta) return; // mesa valendo saldo: o prêmio cai sozinho na carteira
   if (solo || st.phase !== 'gameEnd' || !account) return;
   const g = st.games[0]; if (!g) return;
   const key = st.code + '-' + g.n;
@@ -2744,7 +2745,7 @@ function render() {
   // durante o jogo a tela é só a mesa: sem cabeçalho, Mesa e Saguão vão para o lado
   document.body.classList.add('in-game');
   document.getElementById('topRight').innerHTML = '';
-  const tableBar = `<div class="tablebar">${solo ? '<span class="tag">Treino</span>' : `<span class="muted">Mesa</span> <span class="code">${esc(st.code)}</span> <span class="tag stake">vale $ ${esc(st.stake)}</span>`}${chatToggleHtml()}<button class="small" data-leave>Saguão</button></div>`;
+  const tableBar = `<div class="tablebar">${solo ? '<span class="tag">Treino</span>' : `<span class="muted">Mesa</span> <span class="code">${esc(st.code)}</span> <span class="tag stake">${st.stake ? `entrada R$ ${esc(st.stake)}` : 'grátis'}</span>`}${chatToggleHtml()}<button class="small" data-leave>Saguão</button></div>`;
 
   const h = st.hand;
   const r = h.rw.length;
@@ -2881,7 +2882,7 @@ function render() {
       ${handHtml}
       ${partnerHtml}
     </div>
-    <aside class="side">${tableBar}${chatPanelHtml()}${ledgerHtml(st)}${account && !solo ? '<section class="panel" id="payPanel"></section>' : ''}</aside>
+    <aside class="side">${tableBar}${chatPanelHtml()}${ledgerHtml(st)}</aside>
   </div>`;
   $app.querySelectorAll('[data-leave]').forEach(b => (b.onclick = showLobby));
   animateTable(st, hk, me, prevHand);
@@ -3116,7 +3117,7 @@ function renderSeating(st, me) {
     <div class="grid2">
       <section class="panel">
         <h2>Mesa <span class="code">${esc(st.code)}</span></h2>
-        <p class="muted">${st.torneio ? `Jogo ${(st.torneio.g || 0) + 1} do torneio <b>${esc(st.torneio.nome || '')}</b> (melhor de 3). Quando os 4 estiverem aqui, toquem em Começar partida.` : `Mande o código para a turma. ${modeLabel(st.n)}, cada partida vale $ ${esc(st.stake)}.`}</p>
+        <p class="muted">${st.torneio ? `Jogo ${(st.torneio.g || 0) + 1} do torneio <b>${esc(st.torneio.nome || '')}</b> (melhor de 3). Quando os 4 estiverem aqui, toquem em Começar partida.` : `Mande o código para a turma. ${modeLabel(st.n)}, ${st.stake ? `entrada de R$ ${esc(st.stake)} por jogador, paga com o saldo da Carteira quando a partida começar` : 'partida grátis, sem valer saldo'}.`}</p>
         ${!account ? '<p class="notice">Entre com seu usuário no saguão para poder sentar.</p>' : ''}
         <div class="seats-lobby">${rows}</div>
         <div class="row"><button class="primary" id="start" ${filled === st.n && me >= 0 && !busy ? '' : 'disabled'}>Começar partida</button>
@@ -3145,13 +3146,25 @@ function renderSeating(st, me) {
 const fmt = v => (v > 0 ? '+' : v < 0 ? '−' : '') + '$ ' + Math.abs(v);
 const modeLabel = n => `${n / 2}x${n / 2}`;
 function ledgerHtml(st) {
+  if (!st.torneio && !solo) {
+    // mesa valendo saldo (ou grátis): o dinheiro anda pela Carteira, não por fichas da mesa
+    const r = v => 'R$ ' + (v / 100).toFixed(2).replace('.', ',');
+    const a = st.aposta || (st.stake ? { valor: st.stake * 100, pote: st.stake * 100 * st.n, taxaPct: window.TAXA_PARTIDA ?? 2, previa: true } : null);
+    return `<section class="panel"><h3>${a ? 'Pote da mesa' : 'Partida grátis'}</h3>
+      ${a ? `<p class="pay-amount" style="margin:4px 0">${r(a.pote)}</p>
+      <p class="muted" style="font-size:13px">Entrada de ${r(a.valor)} de cada jogador${a.previa ? ', paga com o saldo da Carteira quando a partida começar' : ', já paga com o saldo da Carteira'}.
+      ${a.pago ? `Prêmio de <b>${r(a.pago.cada)}</b> para ${a.pago.vencedores.map(k => esc(st.names[k] || k)).join(' e ')} (taxa da casa ${r(a.pago.taxa)}). Já está na Carteira.`
+        : a.devolvido ? 'A mesa foi abandonada: cada um recebeu a entrada de volta.'
+        : `Quem ganhar leva ${r(a.pote - Math.round(a.pote * a.taxaPct / 100))} (taxa da casa de ${String(a.taxaPct).replace('.', ',')}%).`}</p>`
+        : '<p class="muted" style="font-size:13px">Esta mesa não vale saldo.</p>'}</section>`;
+  }
   const ids = Object.keys(st.balances || {});
   const rows = ids.sort((a, b) => st.balances[b] - st.balances[a]).map(id =>
     `<tr><td>${esc(st.names[id] || 'Jogador')}${id === myId ? ' (você)' : ''}</td><td class="${st.balances[id] > 0 ? 'pos' : st.balances[id] < 0 ? 'neg' : ''}">${fmt(st.balances[id])}</td></tr>`).join('');
   const wins = [0, 0]; (st.games || []).forEach(g => wins[g.winner]++);
   return `<section class="panel"><h3>Saldo de fichas</h3>
     ${rows ? `<table class="ledger"><tbody>${rows}</tbody></table>` : '<p class="muted">Ainda ninguém jogou nesta mesa.</p>'}
-    <p class="muted" style="font-size:13px">${st.torneio ? 'Partida de torneio (sem aposta).' : `Cada partida vale $ ${esc(st.stake)}.`} Partidas: Time 1 ${wins[0]} × ${wins[1]} Time 2.</p></section>`;
+    <p class="muted" style="font-size:13px">${st.torneio ? 'Partida de torneio (sem aposta).' : (st.aposta ? `Pote de R$ ${(st.aposta.pote / 100).toFixed(2).replace('.', ',')}${st.aposta.pago ? ` · prêmio de R$ ${(st.aposta.pago.cada / 100).toFixed(2).replace('.', ',')} para cada vencedor (taxa da casa R$ ${(st.aposta.pago.taxa / 100).toFixed(2).replace('.', ',')})` : ''}.` : st.stake ? `Entrada de R$ ${esc(st.stake)}.` : 'Partida grátis.')} Partidas: Time 1 ${wins[0]} × ${wins[1]} Time 2.</p></section>`;
 }
 
 function cardInner(c, vira) {

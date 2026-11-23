@@ -30,6 +30,10 @@ async function loadCarteira() {
   if (!fns || !account) { cart.r = null; renderCarteira(); return; }
   const r = await callServer('carteiraResumo', {}, { quiet: true });
   cart.r = r; renderCarteira();
+  if (r && r.regras && r.regras.taxaPartida != null) {
+    window.TAXA_PARTIDA = r.regras.taxaPartida;
+    const t = document.getElementById('taxaPartida'); if (t) t.textContent = String(r.regras.taxaPartida).replace('.', ',');
+  }
   const pend = r && r.depositos.find(d => d.status === 'aguardando' && (!d.expiraEm || d.expiraEm > Date.now()));
   if (pend && (!cart.dep || cart.dep.id !== pend.id)) watchDeposito(pend.id);
 }
@@ -223,6 +227,7 @@ function renderBankAdmin() {
         <label style="flex:1 1 140px">Modo<select id="cfgMoeda"><option value="FICHA" ${teste ? 'selected' : ''}>Fichas (teste, saldo fictício)</option><option value="BRL" ${teste ? '' : 'selected'}>Reais (Mercado Pago)</option></select></label>
         ${[['depositoMinimo', 'Depósito mínimo'], ['saqueMinimo', 'Saque mínimo'], ['tarifaSaque', 'Tarifa de saque'], ['limiteDiarioDeposito', 'Limite diário de depósito'], ['limiteDiarioSaque', 'Limite diário de saque']].map(([k, t]) => `<label style="flex:1 1 140px">${t} (R$)<input data-cfg="${k}" inputmode="decimal" value="${((cfg[k] || 0) / 100).toFixed(2).replace('.', ',')}"></label>`).join('')}
         <label style="flex:1 1 100px">Saques por dia<input id="cfgSpd" inputmode="numeric" value="${cfg.saquesPorDia}"></label>
+        <label style="flex:1 1 100px">Taxa por partida (%)<input id="cfgTaxa" inputmode="decimal" value="${String(cfg.taxaPartida ?? 2).replace('.', ',')}"></label>
         <label style="flex:1 1 140px"><span><input type="checkbox" id="cfgBloq" ${cfg.saquesBloqueados ? 'checked' : ''}> Saques suspensos</span></label>
       </div>
       <div class="row"><button class="primary small" data-badm="cfg">Salvar configuração</button></div>
@@ -259,7 +264,7 @@ function bindBankAdmin() {
       return;
     }
     if (a === 'cfg') {
-      const novo = { moeda: document.getElementById('cfgMoeda').value, saquesPorDia: Number(document.getElementById('cfgSpd').value), saquesBloqueados: document.getElementById('cfgBloq').checked };
+      const novo = { moeda: document.getElementById('cfgMoeda').value, saquesPorDia: Number(document.getElementById('cfgSpd').value), saquesBloqueados: document.getElementById('cfgBloq').checked, taxaPartida: Number(document.getElementById('cfgTaxa').value.replace(',', '.')) };
       el.querySelectorAll('[data-cfg]').forEach(i => (novo[i.dataset.cfg] = reaisParaCentavos(i.value)));
       if (novo.moeda === 'BRL' && cart.admin.config.moeda !== 'BRL' && !confirm('Ligar o dinheiro de verdade? A partir daqui os depósitos são Pix reais pelo Mercado Pago.')) return;
       run('adminConfig', novo, 'Configuração salva.');
