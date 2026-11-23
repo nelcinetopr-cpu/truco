@@ -191,13 +191,66 @@ async function loadBankAdmin() {
   const out = await callServer('adminPainel', {}, { quiet: true });
   cart.admin = out; renderBankAdmin();
 }
+// abas do painel: Banco (o dia a dia) e Lucros (o que a casa ganhou)
+const bankTabs = () => `<div class="seg two" role="tablist" aria-label="Banco">${[['banco', 'Banco'], ['lucros', 'Lucros']].map(([k, t]) => `<button type="button" role="tab" aria-selected="${(cart.bankTab || 'banco') === k}" data-btab="${k}">${t}</button>`).join('')}</div>`;
+function bindBankTabs(el) {
+  el.querySelectorAll('[data-btab]').forEach(b => (b.onclick = () => {
+    cart.bankTab = b.dataset.btab;
+    if (cart.bankTab === 'lucros') loadLucros(); else renderBankAdmin();
+  }));
+}
+async function loadLucros() {
+  cart.lucros = null; renderBankAdmin();
+  cart.lucros = await callServer('adminLucros', {}, { quiet: true });
+  renderBankAdmin();
+}
+const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+const nomeMes = m => `${MESES[+m.slice(5, 7) - 1]}/${m.slice(0, 4)}`;
+function renderLucros(el) {
+  const L = cart.lucros, dono = orgCfg && orgCfg.owner === myId;
+  if (!L) { el.innerHTML = `<h2>Banco (organização)</h2>${bankTabs()}<p class="muted">Carregando…</p>`; bindBankTabs(el); return; }
+  const t = L.total, cor = v => (v > 0 ? 'pos' : v < 0 ? 'neg' : '');
+  el.innerHTML = `<h2>Banco (organização)</h2>${bankTabs()}
+    <div class="pay-row" style="display:block">
+      <p class="muted" style="margin:0 0 4px">Lucro da casa (desde o começo)${L.moeda === 'FICHA' ? ' · modo fichas (teste)' : ''}</p>
+      <p class="pay-amount ${cor(t.lucro)}" style="margin:0">${brl(t.lucro)}</p>
+      <p class="muted" style="font-size:13px;margin:6px 0 0">Receita ${brl(t.ganhos)} − taxas bancárias ${brl(t.taxas)}</p>
+    </div>
+    <table class="ledger"><tbody>
+      <tr><td>Taxa das partidas (${String(L.taxaPartida).replace('.', ',')}% · ${t.mesas} ${t.mesas === 1 ? 'mesa' : 'mesas'})</td><td class="pos">${brl(t.partidas)}</td></tr>
+      <tr><td>Tarifas de saque</td><td class="pos">${brl(t.tarifas)}</td></tr>
+      <tr><td><b>Receita</b></td><td><b>${brl(t.ganhos)}</b></td></tr>
+      <tr><td>Taxas bancárias (Pix recebidos)</td><td class="neg">− ${brl(t.taxas)}</td></tr>
+      <tr><td><b>Lucro</b></td><td class="${cor(t.lucro)}"><b>${brl(t.lucro)}</b></td></tr>
+      <tr><td>Já retirado por você</td><td>− ${brl(t.retirado)}</td></tr>
+      <tr><td>Reinvestido no caixa da casa</td><td>− ${brl(t.reinvestido)}</td></tr>
+      <tr><td><b>Disponível para retirar</b></td><td class="${cor(t.disponivel)}"><b>${brl(t.disponivel)}</b></td></tr>
+    </tbody></table>
+    ${dono ? `<div class="row">
+      <label style="flex:1 1 120px">Valor (R$)<input id="lcValor" inputmode="decimal" placeholder="${(Math.max(0, t.disponivel) / 100).toFixed(2).replace('.', ',')}"></label>
+      <label style="flex:2 1 160px">Observação<input id="lcMotivo" maxlength="120" placeholder="opcional"></label>
+    </div>
+    <div class="row"><button class="small primary" data-lc="retirar">Retirar lucro</button><button class="small" data-lc="reinvestir">Reinvestir no caixa</button></div>
+    <p class="muted" style="font-size:12px">Retirar lucro = você transferiu esse valor da conta do Mercado Pago para você. Reinvestir = o valor fica no Mercado Pago como caixa da casa, para garantir saques ou dar saldo.</p>` : ''}
+    <h3>Por mês</h3>
+    ${L.meses.length ? `<table class="ledger"><thead><tr><td>Mês</td><td>Receita</td><td>Taxas</td><td>Lucro</td></tr></thead><tbody>${L.meses.map(m => `<tr><td>${nomeMes(m.mes)}</td><td>${brl(m.ganhos)}</td><td>${brl(m.taxas)}</td><td class="${cor(m.lucro)}">${brl(m.lucro)}</td></tr>`).join('')}</tbody></table>` : '<p class="muted">Ainda não tem movimento.</p>'}`;
+  bindBankTabs(el);
+  el.querySelectorAll('[data-lc]').forEach(b => (b.onclick = async () => {
+    const v = reaisParaCentavos(document.getElementById('lcValor').value), retirar = b.dataset.lc === 'retirar';
+    if (!(v > 0)) return toast('Escreva o valor.');
+    if (!confirm(retirar ? `Registrar que você tirou ${brl(v)} de lucro da conta do Mercado Pago?` : `Passar ${brl(v)} do lucro para o caixa da casa?`)) return;
+    const out = await callServer('adminCaixa', { tipo: retirar ? 'lucro' : 'receita', valor: v, motivo: document.getElementById('lcMotivo').value.trim() });
+    if (out) { toast(retirar ? 'Retirada registrada.' : 'Reinvestido no caixa.'); loadLucros(); loadBankAdmin(); }
+  }));
+}
 function renderBankAdmin() {
   const el = document.getElementById('bankAdmin'); if (!el || el.hidden) return;
+  if (cart.bankTab === 'lucros') return renderLucros(el);
   const a = cart.admin;
   if (!a) { el.innerHTML = '<h2>Banco (organização)</h2><p class="muted">Carregando…</p>'; return; }
   const c = a.conferencia, cfg = a.config, teste = cfg.moeda === 'FICHA';
   const dono = orgCfg && orgCfg.owner === myId;
-  el.innerHTML = `<h2>Banco (organização)</h2>
+  el.innerHTML = `<h2>Banco (organização)</h2>${bankTabs()}
     <div class="conf ${c.ok ? 'ok' : 'bad'}">
       <b>${c.ok ? 'Contas batendo' : 'As contas NÃO batem — saques suspensos'}</b>
       <span>Em custódia <b>${brl(c.custodia)}</b> · saldos dos jogadores <b>${brl(c.jogadores)}</b> · saques a pagar <b>${brl(c.reservado)}</b> · receita <b>${brl(c.receita)}</b> · caixa da casa <b>${brl(c.capital || 0)}</b> · taxas bancárias <b>${brl(c.taxas)}</b></span>
@@ -225,7 +278,7 @@ function renderBankAdmin() {
     ${dono ? `<details><summary>Caixa da casa e dar saldo (só o dono)</summary>
       <p class="muted" style="font-size:13px">O <b>caixa da casa</b> é o seu dinheiro deixado no Mercado Pago para garantir os saques. Hoje: <b>${brl(c.capital || 0)}</b>. Para dar saldo a alguém (inclusive a você), o valor sai do caixa da casa.</p>
       <div class="row">
-        <label style="flex:1 1 150px">Movimento<select id="cxTipo"><option value="entrada">Coloquei dinheiro no Mercado Pago</option><option value="retirada">Tirei dinheiro do Mercado Pago</option><option value="receita">Passar receita (taxas) para o caixa</option></select></label>
+        <label style="flex:1 1 150px">Movimento<select id="cxTipo"><option value="entrada">Coloquei dinheiro no Mercado Pago</option><option value="retirada">Tirei dinheiro do Mercado Pago</option></select></label>
         <label style="flex:1 1 110px">Valor (R$)<input id="cxValor" inputmode="decimal" placeholder="0,00"></label>
         <label style="flex:2 1 160px">Observação<input id="cxMotivo" maxlength="120" placeholder="opcional"></label>
       </div>
@@ -251,6 +304,7 @@ function renderBankAdmin() {
 }
 function bindBankAdmin() {
   const el = document.getElementById('bankAdmin');
+  bindBankTabs(el);
   const run = async (name, data, msg) => { const out = await callServer(name, data); if (out) { if (msg) toast(msg); loadBankAdmin(); loadCarteira(); } return out; };
   el.querySelectorAll('[data-saqpago]').forEach(b => (b.onclick = () => {
     const id = b.dataset.saqpago, tx = el.querySelector(`[data-txid="${id}"]`).value.trim();
