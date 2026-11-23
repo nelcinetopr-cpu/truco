@@ -208,10 +208,10 @@ function renderBankAdmin() {
       </div>`).join('') : '<p class="muted">Nenhum saque esperando.</p>'}
     <h3>Depósitos para conferir</h3>
     ${a.depositos.length ? a.depositos.map(d => `<div class="pay-row">
-        <div><b>${esc(d.name || d.key)}</b> ${brl(d.valorPago || d.valor)} · ${esc(STATUS_DEP[d.status] || d.status)}<div class="muted" style="font-size:12px">${quando(d.criadoEm)}${d.cpfPagador ? ` · CPF de quem pagou: ${esc(d.cpfPagador)}` : ''}</div></div>
+        <div><b>${esc(d.name || d.key)}</b> ${brl(d.valorPago || d.valor)} · ${esc(STATUS_DEP[d.status] || d.status)}<div class="muted" style="font-size:12px">${quando(d.criadoEm)}${d.nomePagador ? ` · pagou: ${esc(d.nomePagador)}` : ''}${d.cpfPagador ? ` · CPF de quem pagou: ${esc(d.cpfPagador)}` : ''}</div></div>
         ${d.status === 'conferir'
           ? `<div class="row"><input placeholder="CPF de quem pagou (do extrato)" data-depcpf="${esc(d.id)}" style="flex:1 1 160px"><button class="small primary" data-depok="${esc(d.id)}">Conferir</button></div>`
-          : `<div class="row"><input placeholder="ID do Pix de devolução" data-devtx="${esc(d.id)}" style="flex:1 1 160px"><button class="small" data-devok="${esc(d.id)}">Devolvido</button></div>`}
+          : `<div class="row"><input placeholder="ID do Pix de devolução" data-devtx="${esc(d.id)}" style="flex:1 1 160px"><button class="small" data-devok="${esc(d.id)}">Devolvido</button><button class="small primary" data-depcred="${esc(d.id)}">Era dele: creditar</button></div>`}
       </div>`).join('') : '<p class="muted">Nada para conferir.</p>'}
     <h3>Alertas (${a.alertas.length})</h3>
     ${a.alertas.length ? `<ul class="movs">${a.alertas.map(x => `<li><span>${esc(x.texto || x.tipo)}</span><button class="small" data-alerta="${esc(x.id)}">Visto</button><small class="muted">${quando(x.at)}</small></li>`).join('')}</ul>` : '<p class="muted">Nenhum alerta.</p>'}
@@ -243,6 +243,10 @@ function bindBankAdmin() {
   }));
   el.querySelectorAll('[data-depok]').forEach(b => (b.onclick = () => run('adminDeposito', { id: b.dataset.depok, cpfPagador: el.querySelector(`[data-depcpf="${b.dataset.depok}"]`).value }, 'Depósito conferido.')));
   el.querySelectorAll('[data-devok]').forEach(b => (b.onclick = () => run('adminDeposito', { id: b.dataset.devok, devolvidoTxId: el.querySelector(`[data-devtx="${b.dataset.devok}"]`).value.trim() }, 'Devolução registrada.')));
+  el.querySelectorAll('[data-depcred]').forEach(b => (b.onclick = () => {
+    if (!confirm('Você conferiu no extrato do Mercado Pago que esse Pix saiu de uma conta no CPF do jogador? O valor entra no saldo dele.')) return;
+    run('adminDeposito', { id: b.dataset.depcred, creditar: true }, 'Depósito creditado ao jogador.');
+  }));
   el.querySelectorAll('[data-alerta]').forEach(b => (b.onclick = () => run('adminAlerta', { id: b.dataset.alerta })));
   el.querySelectorAll('[data-badm]').forEach(b => (b.onclick = async () => {
     const a = b.dataset.badm;
