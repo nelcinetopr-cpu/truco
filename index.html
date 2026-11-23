@@ -485,6 +485,11 @@ body.in-game .games { display: none; }
 .end-pop > b, .pk-pop > b { font-family: var(--display); font-weight: 400; font-size: 24px; color: var(--brass); }
 .end-pop button, .pk-pop button { width: 100%; padding: 12px 14px; font-size: 16px; }
 .pk-pop .presult { background: none; padding: 0; }
+.pixbox { display: grid; gap: 10px; justify-items: start; }
+.pixqr { width: min(220px, 70vw); aspect-ratio: 1; background: #fff; border-radius: 10px; padding: 8px; }
+.pixcode { font-size: 12px; max-width: 100%; overflow-wrap: anywhere; }
+.conf { display: grid; gap: 6px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--felt-deep); }
+.conf.ok > b { color: #8fd9a8; } .conf.bad { border-color: var(--red); } .conf.bad > b { color: var(--them); }
 .pk-ranks { margin: 0; padding-left: 22px; display: grid; gap: 2px; font-size: 14px; }
 .wallet { display: grid; gap: 2px; padding: 12px 14px; border-radius: 12px; background: var(--felt-deep); border: 1px solid var(--line); }
 .wallet b { font-family: var(--display); font-weight: 400; font-size: 28px; color: var(--brass); }
@@ -521,128 +526,24 @@ body.in-game .games { display: none; }
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-functions-compat.js"></script>
 <script src="firebase-config.js"></script>
 <script src="voz-config.js"></script>
+<script src="org-config.js"></script>
+<script src="truco-engine.js"></script>
 <script src="poker.js"></script>
+<script src="carteira.js"></script>
 <script>
 /* =========================================================
-   REGRAS — Truco Paulista (baralho de 40 cartas, com vira)
+   REGRAS — vêm do arquivo truco-engine.js (o mesmo que roda no servidor e nos testes)
    ========================================================= */
-const RANKS = ['4','5','6','7','Q','J','K','A','2','3'];
-const SUITS = ['o','e','c','p']; // ouros < espadas < copas < paus (zap), ordem das manilhas
-const SUIT_SYM = { o:'♦', e:'♠', c:'♥', p:'♣' };
-const RAISE_NAME = { 3:'Truco', 6:'Seis', 9:'Nove', 12:'Doze' };
-const NEXT_VALUE = { 1:3, 3:6, 6:9, 9:12 };
-const team = s => s % 2;
-
-function manilhaRank(vira) { return RANKS[(RANKS.indexOf(vira[0]) + 1) % RANKS.length]; }
-function isManilha(c, vira) { return c[0] === manilhaRank(vira); }
-function strength(c, vira) { return isManilha(c, vira) ? 100 + SUITS.indexOf(c[1]) : RANKS.indexOf(c[0]); }
-function cardLabel(c) { return c[0] + SUIT_SYM[c[1]]; }
-
-function randInt(n) { const a = new Uint32Array(1); crypto.getRandomValues(a); return a[0] % n; }
-function newDeck() {
-  const d = [];
-  for (const r of RANKS) for (const s of SUITS) d.push(r + s);
-  for (let i = d.length - 1; i > 0; i--) { const j = randInt(i + 1); [d[i], d[j]] = [d[j], d[i]]; }
-  return d;
-}
-function nextOfTeam(from, t, n) { for (let i = 1; i <= n; i++) { const s = (from + i) % n; if (team(s) === t) return s; } return from; }
-function firstOfTeamFrom(start, t, n) { for (let i = 0; i < n; i++) { const s = (start + i) % n; if (team(s) === t) return s; } return start; }
-function nick(st, seat) { const id = st.seats[seat]; return (id && st.names[id]) || 'Jogador ' + (seat + 1); }
-function teamLabel(t) { return t === 0 ? 'Time 1' : 'Time 2'; }
-function addLog(st, text) { st.log = [text, ...(st.log || [])].slice(0, 10); }
-
-function deal(st) {
-  const n = st.n, deck = newDeck();
-  const hands = [];
-  for (let s = 0; s < n; s++) hands.push(deck.splice(0, 3));
-  const vira = deck.pop();
-  const mao = (st.dealer + 1) % n;
-  const [a, b] = st.score;
-  const ferro = a === 11 && b === 11;
-  const onzeTeam = !ferro && (a === 11 || b === 11) ? (a === 11 ? 0 : 1) : -1;
-  st.hand = {
-    hid: Math.random().toString(36).slice(2, 8), // identifica a mão (para as animações)
-    vira, hands, played: [[]], rw: [], turn: mao, mao, value: 1, lastRaise: -1, pending: null,
-    ferro, onzeTeam, onzeDecider: onzeTeam >= 0 ? firstOfTeamFrom(mao, onzeTeam, n) : -1,
-  };
-  st.result = null;
-  st.phase = onzeTeam >= 0 ? 'onze' : 'play';
-  addLog(st, `${nick(st, st.dealer)} deu as cartas. Vira ${cardLabel(vira)}, manilha é ${manilhaRank(vira)}.`);
-  if (ferro) addLog(st, 'Mão de ferro: ninguém vê as cartas do parceiro, vale 1 e sem truco.');
-  if (onzeTeam >= 0) addLog(st, `Mão de onze para o ${teamLabel(onzeTeam)}.`);
-}
-
-// Quem leva a mão a partir dos resultados das vazas (-1 = empate/cangou).
-// Retorna o time vencedor, -1 se empatou tudo, ou null se a mão continua.
-// raiser = time que fez o último pedido aceito (truco, seis...), ou -1 se ninguém pediu.
-// Quem pediu precisa ganhar: se as vazas só empatam, quem pediu perde
-// (na segunda vaza empatada depois da primeira empatada, ou com as três empatadas).
-function decideHand(rw, raiser = -1) {
-  const [a, b, c] = rw;
-  if (rw.length < 2) return null;
-  if (rw.length === 2) {
-    if (a === -1 && b !== -1) return b;
-    if (a !== -1 && b === -1) return a;
-    if (a !== -1 && a === b) return a;
-    if (a === -1 && b === -1 && raiser >= 0) return 1 - raiser;
-    return null;
-  }
-  if (c === -1) { if (a !== -1) return a; if (b !== -1) return b; return raiser >= 0 ? 1 - raiser : -1; }
-  return c;
-}
-
-function endHand(st, winner, points, reason) {
-  const h = st.hand;
-  h.pending = null;
-  if (winner >= 0) st.score[winner] += points;
-  st.result = { winner, points, reason };
-  addLog(st, winner >= 0 ? `${teamLabel(winner)} fez ${points} ${points === 1 ? 'tento' : 'tentos'} (${reason}).` : 'Empatou tudo, ninguém marca.');
-  const champ = st.score[0] >= 12 ? 0 : st.score[1] >= 12 ? 1 : -1;
-  if (champ < 0) { st.phase = 'handEnd'; return; }
-  st.phase = 'gameEnd';
-  const delta = {};
-  st.seats.forEach((id, s) => { if (id) delta[id] = (delta[id] || 0) + (team(s) === champ ? st.stake : -st.stake); });
-  for (const id in delta) st.balances[id] = (st.balances[id] || 0) + delta[id];
-  st.games = [{ n: st.gameNo, winner: champ, score: [...st.score], at: Date.now(), delta }, ...(st.games || [])].slice(0, 50);
-  addLog(st, `${teamLabel(champ)} ganhou a partida ${st.gameNo} por ${Math.min(st.score[champ], 12)} a ${st.score[1 - champ]}. Cada um do time leva ${st.stake} ${st.stake === 1 ? 'ficha' : 'fichas'}.`);
-}
-
-function playCard(st, seat, idx, covered) {
-  const h = st.hand;
-  const card = h.hands[seat].splice(idx, 1)[0];
-  const r = h.rw.length;
-  h.played[r].push({ seat, card, covered: !!covered });
-  if (h.played[r].length < st.n) { h.turn = (seat + 1) % st.n; return; }
-  const plays = h.played[r];
-  const str = p => (p.covered ? -1 : strength(p.card, h.vira));
-  const best = Math.max(...plays.map(str));
-  const top = plays.filter(p => str(p) === best);
-  const teams = new Set(top.map(p => team(p.seat)));
-  let w = teams.size === 1 ? team(top[0].seat) : -1;
-  let lead = top[0], bySuit = false;
-  // Três empates sem truco: na última vaza ganha o naipe mais forte (paus > copas > espadas > ouros).
-  if (w === -1 && r === 2 && h.rw[0] === -1 && h.rw[1] === -1 && h.lastRaise < 0) {
-    const open = top.filter(p => !p.covered);
-    if (open.length) {
-      lead = open.reduce((x, y) => (SUITS.indexOf(y.card[1]) > SUITS.indexOf(x.card[1]) ? y : x));
-      w = team(lead.seat); bySuit = true;
-    }
-  }
-  h.rw.push(w);
-  addLog(st, w >= 0 ? `Vaza ${r + 1}: ${nick(st, lead.seat)} fez com ${cardLabel(lead.card)}${bySuit ? ' pelo naipe' : ''}.` : `Vaza ${r + 1} cangou (empate).`);
-  const dec = decideHand(h.rw, h.lastRaise);
-  const onlyTies = h.rw.every(w => w === -1);
-  if (dec !== null) return endHand(st, dec, h.value, bySuit ? 'empatou as três: ganhou o naipe mais forte' : onlyTies && dec >= 0 ? 'empatou com truco: quem pediu tinha que ganhar' : 'nas vazas');
-  h.played.push([]);
-  h.turn = lead.seat;
-}
-
-function canCallTruco(st, seat) {
-  const h = st.hand;
-  return st.phase === 'play' && h.turn === seat && !h.ferro && h.onzeTeam < 0 && h.value < 12 && h.lastRaise !== team(seat);
-}
+const {
+  RANKS, SUITS, SUIT_SYM, RAISE_NAME, NEXT_VALUE, team,
+  manilhaRank, isManilha, strength, cardLabel, randInt, newDeck,
+  nextOfTeam, firstOfTeamFrom, nick, teamLabel, addLog,
+  deal, decideHand, endHand, playCard, canCallTruco, currentActor, lowestCardIndex,
+  applyAction, timeoutMove,
+} = TrucoEngine;
 
 /* =========================================================
    BANCO — simulado local, usado quando o Firebase ainda não está configurado
@@ -756,6 +657,42 @@ function fsDb(fs) {
 /* Contas: no Firebase o login é do próprio Firebase Auth (usuário vira usuario@truco.jogo).
    No modo de teste local continua o esquema antigo, com a senha guardada embaralhada no banco simulado. */
 let fbAuth = null;
+// O truco de verdade é decidido no servidor (Cloud Functions, pasta functions/).
+// No treino contra robôs e no modo de teste local (sem Firebase) o navegador decide.
+let fns = null;
+const onServer = () => !!fns && !solo;
+async function callServer(name, data, { quiet = false } = {}) {
+  try { return (await fns.httpsCallable(name)(data)).data; }
+  catch (e) {
+    if (!quiet) toast(e && e.message && !/internal/.test(e.code || '') ? e.message : 'Não deu para falar com o servidor. Tente de novo.');
+    return null;
+  }
+}
+// jogada na mesa aberta: trava os botões até o servidor responder
+async function serverMove(name, data = {}) {
+  if (busy) return null;
+  busy = true; if (cur) render();
+  try { return await callServer(name, { code, ...data }); }
+  finally { busy = false; if (cur) render(); }
+}
+// tempo esgotado: pede ao servidor, que confere pelo relógio dele
+let tempoAt = 0;
+async function serverTimeout() {
+  if (busy || Date.now() < tempoAt) return;
+  tempoAt = Date.now() + 1500;
+  const r = await callServer('trucoTempo', { code }, { quiet: true });
+  if (r && r.ok === false && r.waitMs) tempoAt = Date.now() + Math.min(r.waitMs, 5000) + 200;
+}
+// a vista pública da mesa não traz as cartas; a minha mão vem de mesas/{code}/maos/{eu}
+function mergeHand(st, m) {
+  if (!st || !st.hand || !m || m.hid !== st.hand.hid) return st;
+  const me = st.seats.indexOf(myId);
+  if (me < 0) return st;
+  const v = structuredClone(st);
+  v.hand.hands[me] = (m.cards || []).slice();
+  for (const s in m.partner || {}) v.hand.hands[s] = m.partner[s].slice();
+  return v;
+}
 const authApi = {
   async create(key, name, pin) {
     if (!fbAuth) {
@@ -850,8 +787,9 @@ const $app = document.getElementById('app');
    O poker fica no arquivo poker.js; a cacheta ainda não existe. */
 let currentGame = 'truco';
 try { const g = localStorage.getItem('jogo'); if (['truco', 'poker', 'cacheta'].includes(g)) currentGame = g; } catch {}
-// Pix da organização: depósitos de fichas do poker e inscrições dos torneios do truco
-const ORG_PIX = { nome: 'Organização', tipo: 'Chave aleatória', chave: '4ceac978-5e3c-4100-a811-755a8fa6144e' };
+// Pix da organização: depósitos de fichas do poker e inscrições dos torneios do truco.
+// Vem de org-config.js (fora do repositório, veja org-config.example.js).
+const ORG_PIX = window.ORG_PIX || { nome: 'Organização', tipo: 'Chave aleatória', chave: '' };
 const GAME_SUB = { truco: 'paulista · com vira', poker: "texas hold'em", cacheta: 'em breve' };
 function paintGameNav() {
   document.querySelectorAll('#games [data-game]').forEach(b => b.setAttribute('aria-current', b.dataset.game === currentGame ? 'page' : 'false'));
@@ -885,8 +823,13 @@ document.addEventListener('touchmove', e => { if (e.touches.length > 1) e.preven
 async function init() {
   if (window.FIREBASE_CONFIG && window.firebase) {
     firebase.initializeApp(window.FIREBASE_CONFIG);
+    const emu = /^(localhost|127\.0\.0\.1)$/.test(location.hostname) && new URLSearchParams(location.search).has('emu');
+    if (emu) firebase.firestore().useEmulator('127.0.0.1', 8080);
     db = fsDb(firebase.firestore());
     fbAuth = firebase.auth();
+    if (emu) fbAuth.useEmulator('http://127.0.0.1:9099');
+    fns = firebase.app().functions('southamerica-east1'); // o truco é decidido no servidor
+    if (emu) fns.useEmulator('127.0.0.1', 5001);
     const user = await new Promise(res => { const off = fbAuth.onAuthStateChanged(u => { off(); res(u); }); });
     account = null; myId = null; myNick = '';
     if (user && user.email) {
@@ -1012,10 +955,11 @@ function botMove(s) {
     if (winningTeam === team(s)) pick = sorted[0];
     else pick = sorted.find(x => x.v > best) || sorted.find(x => x.v === best) || sorted[0];
   }
-  commit(x => { if (x.phase !== 'play' || x.hand.turn !== s) return false; playCard(x, s, pick.i, false); });
+  commit(x => applyAction(x, s, { type: 'play', index: pick.i }));
 }
 
 function showLobby() {
+  if (typeof stopCarteira === 'function') stopCarteira();
   closeTournament();
   document.body.classList.remove('in-game');
   stopChat();
@@ -1094,9 +1038,12 @@ function showLobby() {
   // pagamentos ao lado do ranking e chave Pix logo acima das regras
   const rulesEl = $app.lastElementChild;
   rulesEl.insertAdjacentHTML('beforebegin', `<div class="grid2"><section class="panel" id="photoPanel"></section><section class="panel" id="pixPanel"></section></div>`);
+  // carteira (saldo, depósito Pix e saque) e o banco da organização, logo no começo do saguão
+  document.getElementById('podium').parentElement.insertAdjacentHTML('beforebegin', `<div class="grid2"><section class="panel" id="walletPanel"></section><section class="panel" id="bankAdmin" hidden></section></div>`);
   document.getElementById('podium').parentElement.insertAdjacentHTML('beforebegin', `<div class="grid2"><section class="panel" id="tourPanel"></section><section class="panel" id="orgPanel"></section></div>`);
   document.getElementById('podium').parentElement.insertAdjacentHTML('afterend', `<div class="grid2"><section class="panel" id="payPanel"></section><section class="panel" id="profitPanel"></section></div>`);
   renderPixPanel(); renderPayments(); renderProfit(); renderPhotoPanel(); renderTourPanel(); renderOrgPanel();
+  if (typeof loadCarteira === 'function') loadCarteira();
   startTourneyLobby();
   document.getElementById('solo').onclick = () => startSolo(+document.getElementById('soloN').value);
   const lo = document.getElementById('logout');
@@ -1618,6 +1565,7 @@ async function removeTable(c) {
   if (removing.has(c) || !canWrite || !account) return;
   removing.add(c);
   clearChat(c);
+  if (fns) return callServer('trucoLimpar', { code: c }, { quiet: true }); // o servidor confere se pode apagar
   try { await db.doc('mesas/' + c + '/locks/seats').delete(); await tableRef(c).delete(); } catch {}
 }
 
@@ -2192,6 +2140,7 @@ function stopTourneyLobby() {
 
 // ---- painel: Organização ----
 function renderOrgPanel() {
+  if (typeof loadBankAdmin === 'function') { const b = document.getElementById('bankAdmin'); if (b && b.hidden === isOrg()) loadBankAdmin(); }
   const el = document.getElementById('orgPanel');
   if (!el) return;
   if (!db || !account) { el.innerHTML = '<h2>Organização</h2><p class="muted">Entre com seu usuário para ver quem organiza os torneios.</p>'; return; }
@@ -2561,6 +2510,11 @@ function advance(chave, r, i) {
 let tourReturn = null;
 async function playMatch(r, i) {
   const tid = tour.id;
+  if (fns) {
+    const res = await callServer('trucoMesaTorneio', { tid, r, i });
+    if (res && res.code) { closeTournament(); tourReturn = tid; openTable(res.code); }
+    return;
+  }
   const byId = Object.fromEntries(tour.insc.map(x => [x.id, x]));
   let codeToOpen = null;
   try {
@@ -2617,6 +2571,7 @@ async function createTable() {
     hand: null, result: null, games: [], balances: {}, gameNo: 0, log: [],
   };
   st.seats[0] = myId;
+  if (fns) { const r = await callServer('trucoCriarMesa', { n, stake }); if (r && r.code) openTable(r.code); return; }
   try { await tableRef(c).set(st); openTable(c); }
   catch { toast('Não deu para criar a mesa. Confira se você tem acesso de edição.'); }
 }
@@ -2638,7 +2593,20 @@ function openTable(c) {
   history.replaceState(null, '', '#' + c);
   $app.innerHTML = '<p class="muted">Procurando a mesa…</p>';
   document.getElementById('topRight').innerHTML = '';
-  unsubTable = tableRef(c).onSnapshot(snap => {
+  let pubData = null, handDoc = null;
+  const show = () => {
+    if (!pubData) return;
+    // o "estou aqui" (aliveAt) de cada jogador chega a cada poucos segundos:
+    // se só isso mudou, não precisa redesenhar a mesa inteira
+    const key = JSON.stringify({ ...pubData, aliveAt: 0, _mao: handDoc });
+    cur = mergeHand(pubData, handDoc);
+    if (key === lastTableKey) return;
+    lastTableKey = key;
+    if (pubData.phase === 'gameEnd') clearChat(c); // fim da partida: a conversa some
+    render();
+  };
+  const unsubHand = fns && myId ? db.doc(`mesas/${c}/maos/${myId}`).onSnapshot(s => { handDoc = s.exists ? s.data() : null; show(); }, () => {}) : null;
+  const unsubPub = tableRef(c).onSnapshot(snap => {
     if (!snap.exists && cur && cur.code === c && cur.phase === 'gameEnd') return; // mesa apagada depois do fim: mantém o resultado na tela
     if (!snap.exists) { $app.innerHTML = `<div class="panel"><p>Mesa <span class="code">${esc(c)}</span> não encontrada.</p><div class="row"><button id="back">Voltar</button></div></div>`; document.getElementById('back').onclick = showLobby; return; }
     const data = snap.data();
@@ -2651,19 +2619,14 @@ function openTable(c) {
         unsubTable(); unsubTable = null;
         return;
       }
-      cur = data;
+      cur = mergeHand(data, handDoc);
       startTableTimers(c);
       startChat(c);
     }
-    // o "estou aqui" (aliveAt) de cada jogador chega a cada poucos segundos:
-    // se só isso mudou, não precisa redesenhar a mesa inteira
-    const key = JSON.stringify({ ...data, aliveAt: 0 });
-    cur = data;
-    if (key === lastTableKey) return;
-    lastTableKey = key;
-    if (data.phase === 'gameEnd') clearChat(c); // fim da partida: a conversa some
-    render();
+    pubData = data;
+    show();
   }, () => toast('A conexão com a mesa caiu. Recarregue a página.'));
+  unsubTable = () => { unsubPub(); if (unsubHand) unsubHand(); };
 }
 
 /* =========================================================
@@ -2689,16 +2652,6 @@ function startTableTimers(c) {
 }
 function stopTableTimers() { clearInterval(heartbeatTimer); clearInterval(clockTimer); heartbeatTimer = clockTimer = null; }
 
-// Quem precisa agir agora, ou -1. Na hora de dar as cartas é o próximo a dar.
-function currentActor(st) {
-  const h = st.hand;
-  if (!h) return -1;
-  if (st.phase === 'play') return h.turn;
-  if (st.phase === 'truco') return h.pending.responder;
-  if (st.phase === 'onze') return h.onzeDecider;
-  if (st.phase === 'handEnd') return (st.dealer + 1) % st.n;
-  return -1;
-}
 function timeLeft(st) { return st.turnAt ? Math.max(0, Math.ceil((st.turnAt + limitFor(st) - Date.now()) / 1000)) : null; }
 
 function tickClock() {
@@ -2716,33 +2669,15 @@ function tickClock() {
 // Jogada automática quando o tempo acaba. É determinística, então se dois jogadores
 // agirem ao mesmo tempo o resultado é o mesmo.
 function autoMove(expectedTurnAt) {
-  commit(st => {
-    if (st.turnAt !== expectedTurnAt) return false;
-    const h = st.hand, actor = currentActor(st);
-    if (actor < 0) return false;
-    if (st.phase === 'play') {
-      const cards = h.hands[actor];
-      let low = 0;
-      cards.forEach((c, i) => { if (strength(c, h.vira) < strength(cards[low], h.vira)) low = i; });
-      addLog(st, `Tempo esgotado: ${nick(st, actor)} jogou a menor carta.`);
-      playCard(st, actor, low, false);
-    } else if (st.phase === 'truco') {
-      addLog(st, `Tempo esgotado: ${nick(st, actor)} não respondeu e correu.`);
-      endHand(st, h.pending.by, h.value, 'tempo esgotado: o outro time correu');
-    } else if (st.phase === 'onze') {
-      addLog(st, `Tempo esgotado na mão de onze: ${teamLabel(team(actor))} correu.`);
-      endHand(st, 1 - team(actor), 1, 'tempo esgotado na mão de onze');
-    } else if (st.phase === 'handEnd') {
-      st.dealer = actor;
-      deal(st);
-    } else return false;
-  });
+  if (onServer()) return serverTimeout();
+  commit(st => (st.turnAt === expectedTurnAt ? timeoutMove(st) : false));
 }
 
 const mySeat = () => (cur ? cur.seats.indexOf(myId) : -1);
 
 async function sit(i) {
   if (!account) return toast('Entre com seu usuário e senha no saguão para sentar.');
+  if (onServer()) return serverMove('trucoSentar', { seat: i });
   try {
     const lock = await db.doc('mesas/' + code + '/locks/seats').acquire({ holder: myId, ttlMs: 4000 });
     if (!lock.acquired) return toast('Alguém está sentando agora. Tente de novo em um segundo.');
@@ -2829,13 +2764,13 @@ function render() {
   const myTurn = seated && st.phase === 'play' && h.turn === me && !busy;
   if (seated) {
     const cards = h.hands[me];
-    handHtml = `<div class="hand ${myTurn ? 'playable' : ''}">${cards.map((c, i) =>
-      `<button class="card ${cardClass(c, h.vira)}" data-play="${i}" data-c="${c}" ${myTurn ? '' : 'disabled'} aria-label="${cardLabel(c)}${isManilha(c, h.vira) ? ', manilha' : ''}">${cardInner(c, h.vira)}</button>`).join('')}</div>`;
+    handHtml = `<div class="hand ${myTurn ? 'playable' : ''}">${cards.map((c, i) => (!c ? '<span class="card back"></span>' :
+      `<button class="card ${cardClass(c, h.vira)}" data-play="${i}" data-c="${c}" ${myTurn ? '' : 'disabled'} aria-label="${cardLabel(c)}${isManilha(c, h.vira) ? ', manilha' : ''}">${cardInner(c, h.vira)}</button>`)).join('')}</div>`;
   }
   let partnerHtml = '';
   if (showPartner) {
     for (let s = 0; s < st.n; s++) if (s !== me && team(s) === team(me)) {
-      partnerHtml += `<div class="partner"><h3>Cartas de ${esc(nick(st, s))}</h3><div class="hand">${h.hands[s].map(c => cardHtml(c, h.vira)).join('')}</div></div>`;
+      partnerHtml += `<div class="partner"><h3>Cartas de ${esc(nick(st, s))}</h3><div class="hand">${h.hands[s].map(c => (c ? cardHtml(c, h.vira) : '<span class="card back"></span>')).join('')}</div></div>`;
     }
   }
 
@@ -2924,7 +2859,8 @@ function render() {
     anim.from = { rect: b.getBoundingClientRect(), at: Date.now() }; // a carta sai daqui
     const c = cover;
     cover = false;
-    commit(s => { if (s.phase !== 'play' || s.hand.turn !== me) return false; playCard(s, me, i, c && s.hand.rw.length >= 1); });
+    if (onServer()) return serverMove('trucoJogar', { action: { type: 'play', index: i, covered: c } });
+    commit(s => applyAction(s, me, { type: 'play', index: i, covered: c }));
   }));
   const cv = document.getElementById('cover'); if (cv) cv.onclick = () => { cover = !cover; render(); };
   $app.querySelectorAll('[data-act]').forEach(b => (b.onclick = () => (b.dataset.act === 'lobby' ? showLobby() : b.dataset.act === 'tour' ? openTournament(cur.torneio.tid) : act(b.dataset.act))));
@@ -3126,55 +3062,8 @@ function slideSound(c, t, vol) {
 }
 
 function act(a, me = mySeat()) {
-  commit(st => {
-    const h = st.hand, p = h && h.pending;
-    switch (a) {
-      case 'truco':
-        if (!canCallTruco(st, me)) return false;
-        h.pending = { to: NEXT_VALUE[h.value], by: team(me), caller: me, responder: nextOfTeam(me, 1 - team(me), st.n) };
-        st.phase = 'truco';
-        addLog(st, `${nick(st, me)} pediu ${RAISE_NAME[h.pending.to].toLowerCase()}!`);
-        break;
-      case 'accept':
-        if (st.phase !== 'truco' || p.responder !== me) return false;
-        h.value = p.to; h.lastRaise = p.by; h.pending = null; st.phase = 'play';
-        addLog(st, `${nick(st, me)} aceitou. Valendo ${h.value}.`);
-        break;
-      case 'run':
-        if (st.phase !== 'truco' || p.responder !== me) return false;
-        addLog(st, `${nick(st, me)} correu.`);
-        endHand(st, p.by, h.value, 'o outro time correu');
-        break;
-      case 'raise':
-        if (st.phase !== 'truco' || p.responder !== me || p.to >= 12) return false;
-        h.value = p.to; h.lastRaise = p.by;
-        h.pending = { to: NEXT_VALUE[p.to], by: team(me), caller: me, responder: p.caller };
-        addLog(st, `${nick(st, me)} pediu ${RAISE_NAME[h.pending.to].toLowerCase()}!`);
-        break;
-      case 'onzePlay':
-        if (st.phase !== 'onze' || h.onzeDecider !== me) return false;
-        h.value = 3; st.phase = 'play';
-        addLog(st, `${teamLabel(team(me))} vai jogar a mão de onze.`);
-        break;
-      case 'onzeRun':
-        if (st.phase !== 'onze' || h.onzeDecider !== me) return false;
-        addLog(st, `${teamLabel(team(me))} correu da mão de onze.`);
-        endHand(st, 1 - team(me), 1, 'correram da mão de onze');
-        break;
-      case 'next':
-        if (st.phase !== 'handEnd') return false;
-        st.dealer = (st.dealer + 1) % st.n;
-        deal(st);
-        break;
-      case 'newGame':
-        if (st.phase !== 'gameEnd' || !solo) return false;
-        st.score = [0, 0]; st.gameNo++; st.dealer = (st.dealer + 1) % st.n;
-        addLog(st, `Começou a partida ${st.gameNo}.`);
-        deal(st);
-        break;
-      default: return false;
-    }
-  });
+  if (onServer()) return serverMove('trucoJogar', { action: { type: a } });
+  commit(st => applyAction(st, me, { type: a }, { allowNewGame: solo }));
 }
 
 function renderSeating(st, me) {
@@ -3200,6 +3089,12 @@ function renderSeating(st, me) {
       <aside class="side">${ledgerHtml(st)}</aside>
     </div>`;
   $app.querySelectorAll('[data-sit]').forEach(b => (b.onclick = () => sit(+b.dataset.sit)));
+  if (onServer()) {
+    $app.querySelectorAll('[data-stand]').forEach(b => (b.onclick = () => serverMove('trucoLevantar')));
+    $app.querySelectorAll('[data-kick]').forEach(b => (b.onclick = () => serverMove('trucoTirar', { seat: +b.dataset.kick })));
+    document.getElementById('start').onclick = () => serverMove('trucoComecar');
+    return;
+  }
   $app.querySelectorAll('[data-stand]').forEach(b => (b.onclick = () => commit(s => { const i = s.seats.indexOf(myId); if (i < 0 || s.phase !== 'lobby') return false; s.seats[i] = null; })));
   $app.querySelectorAll('[data-kick]').forEach(b => (b.onclick = () => commit(s => { if (s.phase !== 'lobby' || s.owner !== myId) return false; s.seats[+b.dataset.kick] = null; })));
   document.getElementById('start').onclick = () => commit(s => {
