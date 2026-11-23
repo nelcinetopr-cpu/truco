@@ -515,7 +515,7 @@ body.in-game .games { display: none; }
   </header>
   <nav class="games" id="games" aria-label="Jogos">
     <button type="button" data-game="truco">Truco</button>
-    <button type="button" data-game="poker">Poker</button>
+    <button type="button" data-game="poker">Poker<small>em breve</small></button>
     <button type="button" data-game="cacheta">Cacheta<small>em breve</small></button>
   </nav>
   <div id="notice" class="notice" hidden></div>
@@ -807,7 +807,8 @@ const $app = document.getElementById('app');
 /* ---------------- ABAS DOS JOGOS: truco, poker e cacheta ----------------
    O poker fica no arquivo poker.js; a cacheta ainda não existe. */
 let currentGame = 'truco';
-try { const g = localStorage.getItem('jogo'); if (['truco', 'poker', 'cacheta'].includes(g)) currentGame = g; } catch {}
+const POKER_ATIVO = false; // poker desligado por enquanto (a carteira de fichas dele ainda é do navegador)
+try { const g = localStorage.getItem('jogo'); if (['truco', 'cacheta'].concat(POKER_ATIVO ? ['poker'] : []).includes(g)) currentGame = g; } catch {}
 // Pix da organização: depósitos de fichas do poker e inscrições dos torneios do truco.
 // Vem de org-config.js (fora do repositório, veja org-config.example.js).
 const ORG_PIX = window.ORG_PIX || { nome: 'Organização', tipo: 'Chave aleatória', chave: '' };
@@ -817,6 +818,7 @@ function paintGameNav() {
   const sub = document.getElementById('brandSub'); if (sub) sub.textContent = GAME_SUB[currentGame];
 }
 function setGame(g) {
+  if (g === 'poker' && !POKER_ATIVO) return toast('O poker volta em breve. Por enquanto, só o truco.');
   if (g === 'poker' && typeof showPokerLobby !== 'function') return toast('O poker não carregou. Recarregue a página.');
   currentGame = g;
   try { localStorage.setItem('jogo', g); } catch {}
@@ -868,7 +870,7 @@ async function init() {
   }
   startPayments();
   const h = location.hash.replace('#', '').toUpperCase();
-  if (h.startsWith('POKER-') && typeof openPokerTable === 'function') { currentGame = 'poker'; paintGameNav(); openPokerTable(h.slice(6)); }
+  if (POKER_ATIVO && h.startsWith('POKER-') && typeof openPokerTable === 'function') { currentGame = 'poker'; paintGameNav(); openPokerTable(h.slice(6)); }
   else if (h && /^[A-Z0-9]{4,8}$/.test(h)) openTable(h); else showLobby();
 }
 

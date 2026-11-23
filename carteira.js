@@ -17,7 +17,7 @@ const reaisParaCentavos = s => {
 const quando = t => new Date(t).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 const STATUS_DEP = { aguardando: 'esperando o Pix', creditado: 'creditado', conferir: 'a organização vai conferir', devolver: 'pago por outro CPF: será devolvido', devolvido: 'devolvido', expirado: 'expirou', cancelado: 'cancelado', erro: 'erro ao gerar', criando: 'gerando' };
 const STATUS_SAQ = { pendente: 'esperando pagamento', pago: 'pago', recusado: 'recusado (valor voltou)' };
-const TIPO_LANC = { deposito: 'Depósito', 'saque-pedido': 'Saque pedido', 'saque-estornado': 'Saque recusado (estorno)', 'saque-pago': 'Saque pago', 'taxa-bancaria': 'Taxa bancária' };
+const TIPO_LANC = { deposito: 'Depósito', 'saque-pedido': 'Saque pedido', 'saque-estornado': 'Saque recusado (estorno)', 'saque-pago': 'Saque pago', 'taxa-bancaria': 'Taxa bancária', 'credito-da-casa': 'Saldo dado pela casa', 'entrada-mesa': 'Entrada de mesa', 'premio-mesa': 'Prêmio de mesa', 'devolucao-mesa': 'Entrada devolvida' };
 
 function stopCarteira() {
   if (cart.unsubDep) cart.unsubDep();
@@ -200,7 +200,7 @@ function renderBankAdmin() {
   el.innerHTML = `<h2>Banco (organização)</h2>
     <div class="conf ${c.ok ? 'ok' : 'bad'}">
       <b>${c.ok ? 'Contas batendo' : 'As contas NÃO batem — saques suspensos'}</b>
-      <span>Em custódia <b>${brl(c.custodia)}</b> · saldos dos jogadores <b>${brl(c.jogadores)}</b> · saques a pagar <b>${brl(c.reservado)}</b> · receita <b>${brl(c.receita)}</b> · taxas bancárias <b>${brl(c.taxas)}</b></span>
+      <span>Em custódia <b>${brl(c.custodia)}</b> · saldos dos jogadores <b>${brl(c.jogadores)}</b> · saques a pagar <b>${brl(c.reservado)}</b> · receita <b>${brl(c.receita)}</b> · caixa da casa <b>${brl(c.capital || 0)}</b> · taxas bancárias <b>${brl(c.taxas)}</b></span>
       <small class="muted">${teste ? 'Modo de teste (saldo fictício).' : 'Reais (Mercado Pago).'} Conferido ${quando(c.at)}.</small>
       <div class="row"><button class="small" data-badm="conf">Conferir agora</button></div>
     </div>
@@ -222,6 +222,21 @@ function renderBankAdmin() {
     <h3>Extrato de um jogador</h3>
     <div class="row"><input id="admExtUser" placeholder="Usuário" style="flex:1 1 140px"><button class="small" data-badm="ext">Ver</button></div>
     <div id="admExt"></div>
+    ${dono ? `<details><summary>Caixa da casa e dar saldo (só o dono)</summary>
+      <p class="muted" style="font-size:13px">O <b>caixa da casa</b> é o seu dinheiro deixado no Mercado Pago para garantir os saques. Hoje: <b>${brl(c.capital || 0)}</b>. Para dar saldo a alguém (inclusive a você), o valor sai do caixa da casa.</p>
+      <div class="row">
+        <label style="flex:1 1 150px">Movimento<select id="cxTipo"><option value="entrada">Coloquei dinheiro no Mercado Pago</option><option value="retirada">Tirei dinheiro do Mercado Pago</option><option value="receita">Passar receita (taxas) para o caixa</option></select></label>
+        <label style="flex:1 1 110px">Valor (R$)<input id="cxValor" inputmode="decimal" placeholder="0,00"></label>
+        <label style="flex:2 1 160px">Observação<input id="cxMotivo" maxlength="120" placeholder="opcional"></label>
+      </div>
+      <div class="row"><button class="small primary" data-badm="caixa">Registrar no caixa</button></div>
+      <div class="row">
+        <label style="flex:1 1 140px">Usuário<input id="crUser" placeholder="ex.: benttin"></label>
+        <label style="flex:1 1 110px">Valor (R$)<input id="crValor" inputmode="decimal" placeholder="0,00"></label>
+        <label style="flex:2 1 160px">Motivo<input id="crMotivo" maxlength="120" placeholder="opcional"></label>
+      </div>
+      <div class="row"><button class="small primary" data-badm="creditar">Dar saldo</button></div>
+    </details>` : ''}
     ${dono ? `<details><summary>Configuração (só o dono)</summary>
       <div class="row">
         <label style="flex:1 1 140px">Modo<select id="cfgMoeda"><option value="FICHA" ${teste ? 'selected' : ''}>Fichas (teste, saldo fictício)</option><option value="BRL" ${teste ? '' : 'selected'}>Reais (Mercado Pago)</option></select></label>
@@ -262,6 +277,19 @@ function bindBankAdmin() {
       document.getElementById('admExt').innerHTML = `<p><b>${esc(out.key)}</b> · CPF ${esc(out.cpf || 'não cadastrado')} · saldo ${brl(out.saldo)} · depositou ${brl(out.depositado)} · jogou ${brl(out.apostado)}</p>
         <ul class="movs">${out.lancamentos.map(l => `<li><span>${esc(TIPO_LANC[l.tipo] || l.tipo)} <span class="muted">${esc(l.moeda)}</span></span><b>${l.linhas.map(x => `${x.lado} ${esc(x.conta)} ${brl(x.valor)}`).join(' / ')}</b><small class="muted">${quando(l.at)}</small></li>`).join('') || '<li><span class="muted">Sem lançamentos.</span></li>'}</ul>`;
       return;
+    }
+    if (a === 'caixa') {
+      const v = reaisParaCentavos(document.getElementById('cxValor').value), tipo = document.getElementById('cxTipo').value;
+      if (!(v > 0)) return toast('Escreva o valor.');
+      const txt = { entrada: 'entrou no Mercado Pago', retirada: 'saiu do Mercado Pago', receita: 'vai da receita para o caixa' }[tipo];
+      if (!confirm(`Confirma: ${brl(v)} ${txt}?`)) return;
+      return run('adminCaixa', { tipo, valor: v, motivo: document.getElementById('cxMotivo').value.trim() }, 'Caixa atualizado.');
+    }
+    if (a === 'creditar') {
+      const v = reaisParaCentavos(document.getElementById('crValor').value), key = document.getElementById('crUser').value.trim();
+      if (!key || !(v > 0)) return toast('Escreva o usuário e o valor.');
+      if (!confirm(`Dar ${brl(v)} de saldo para ${key}? O valor sai do caixa da casa.`)) return;
+      return run('adminCreditar', { key, valor: v, motivo: document.getElementById('crMotivo').value.trim() }, 'Saldo adicionado.');
     }
     if (a === 'cfg') {
       const novo = { moeda: document.getElementById('cfgMoeda').value, saquesPorDia: Number(document.getElementById('cfgSpd').value), saquesBloqueados: document.getElementById('cfgBloq').checked, taxaPartida: Number(document.getElementById('cfgTaxa').value.replace(',', '.')) };
