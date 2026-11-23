@@ -156,9 +156,21 @@ main#app { display: grid; gap: 18px; min-width: 0; }
 .mesa.six .played .card { width: clamp(34px, 6.5vw, 52px); }
 .banner {
   position: absolute; left: 50%; top: 50%; z-index: 3; transform: translate(-50%, -50%) rotate(-4deg);
-  font-family: var(--display); font-size: clamp(24px, 6vw, 46px); color: #fff3e6; background: var(--red);
-  padding: 4px 18px; border-radius: 8px; box-shadow: 0 8px 22px rgba(0,0,0,.5); white-space: nowrap; pointer-events: none;
+  font-family: var(--display); font-size: clamp(13px, 3.2vw, 20px); color: #fff3e6; background: var(--red);
+  padding: 2px 10px; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,.45); white-space: nowrap; pointer-events: none;
 }
+/* aviso pequeno em cima de quem pediu truco / aceitou / correu */
+.fx-mini { position: fixed; z-index: 60; pointer-events: none; transform: translate(-50%, -50%) rotate(-4deg); text-align: center; white-space: nowrap;
+  font-family: var(--display); font-size: clamp(20px, 5.5vw, 34px); line-height: 1; color: #fff3e6; background: var(--red);
+  padding: 6px 14px 8px; border-radius: 10px; border: 3px solid #fff3e6; box-shadow: 0 10px 26px rgba(0,0,0,.55); }
+.fx-mini small { display: block; font-family: Figtree, system-ui, sans-serif; font-weight: 800; font-size: 11px; letter-spacing: .5px; margin-top: 3px; }
+.fx-mini.ok { background: #1f7a4d; }
+.fx-mini.run { background: #4a3a2a; }
+/* quem é o pé (joga por último na rodada) */
+.pe-chip { display: inline-block; margin-left: 5px; padding: 0 5px; border-radius: 5px; background: var(--brass); color: #2a1d08;
+  font-family: Figtree, system-ui, sans-serif; font-size: 10px; font-weight: 800; letter-spacing: .5px; line-height: 15px; vertical-align: 1px; }
+.seat .mini.shown .card { width: 30px; margin-left: 2px; border-width: 2px; font-size: 9px; }
+@media (max-width: 560px) { .seat .mini.shown .card { width: 22px; margin-left: 1px; font-size: 7px; } }
 /* carimbo grande do truco: fica por cima da tela toda e some sozinho */
 /* TRUCO! vindo na direção da tela, com raios atrás */
 .fx { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; pointer-events: none; perspective: 900px; }
@@ -530,10 +542,10 @@ body.in-game .games { display: none; }
 <script src="firebase-config.js"></script>
 <script src="voz-config.js"></script>
 <script src="org-config.js"></script>
-<script src="truco-engine.js?v=20261123c"></script>
-<script src="poker.js?v=20261123c"></script>
+<script src="truco-engine.js?v=20261123d"></script>
+<script src="poker.js?v=20261123d"></script>
 <!-- ao mudar truco-engine.js, poker.js ou carteira.js, troque o ?v= para o navegador baixar de novo -->
-<script src="carteira.js?v=20261123c"></script>
+<script src="carteira.js?v=20261123d"></script>
 <script>
 /* =========================================================
    REGRAS — vêm do arquivo truco-engine.js (o mesmo que roda no servidor e nos testes)
@@ -2664,6 +2676,7 @@ function openTable(c) {
       startTableTimers(c);
       startChat(c);
     }
+    if (!snap.metadata.hasPendingWrites && !snap.metadata.fromCache) noteServerTime(data.updatedAt);
     pubData = data;
     show();
   }, () => toast('A conexão com a mesa caiu. Recarregue a página.'));
@@ -2676,7 +2689,18 @@ function openTable(c) {
 const EMPTY_AFTER_MS = 30 * 1000;   // mesa sem ninguém com ela aberta
 const TURN_MS = 20 * 1000;          // tempo de cada jogada
 const DEAL_MS = 5 * 1000;           // depois de cada mão, as cartas saem sozinhas
-const limitFor = st => (st.phase === 'handEnd' ? DEAL_MS : TURN_MS);
+const SHOW_MS = 10 * 1000;          // depois que o adversário corre: tempo para mostrar as cartas
+const limitFor = st => (st.phase === 'handEnd' ? (st.result && st.result.correu ? SHOW_MS : DEAL_MS) : TURN_MS);
+// O relógio do celular pode estar adiantado ou atrasado em relação ao servidor; sem corrigir,
+// o tempo de 20 s aparece menor para uns e maior para outros. Mede a diferença pelas jogadas.
+let clockSkew = null, lastSeenUpdate = 0;
+function noteServerTime(t) {
+  if (!t || t === lastSeenUpdate) return;
+  lastSeenUpdate = t;
+  const d = Date.now() - t;
+  if (Math.abs(d) < 60000 && (clockSkew === null || d < clockSkew)) clockSkew = d;
+}
+const serverNow = () => Date.now() - (onServer() && clockSkew !== null ? clockSkew : 0);
 const GRACE_MS = 2000;              // os outros esperam um pouco antes de agir pelo jogador
 const HEARTBEAT_MS = 10 * 1000;
 let heartbeatTimer = null, clockTimer = null;
@@ -2693,7 +2717,7 @@ function startTableTimers(c) {
 }
 function stopTableTimers() { clearInterval(heartbeatTimer); clearInterval(clockTimer); heartbeatTimer = clockTimer = null; }
 
-function timeLeft(st) { return st.turnAt ? Math.max(0, Math.ceil((st.turnAt + limitFor(st) - Date.now()) / 1000)) : null; }
+function timeLeft(st) { return st.turnAt ? Math.max(0, Math.min(Math.ceil(limitFor(st) / 1000), Math.ceil((st.turnAt + limitFor(st) - serverNow()) / 1000))) : null; }
 
 function tickClock() {
   if (!cur || solo) return;
@@ -2702,7 +2726,7 @@ function tickClock() {
   if (el && left !== null) { el.textContent = left + 's'; el.classList.toggle('low', left <= 5); }
   const actor = currentActor(cur);
   if (actor < 0 || !cur.turnAt || busy) return;
-  const late = Date.now() - cur.turnAt - limitFor(cur);
+  const late = serverNow() - cur.turnAt - limitFor(cur);
   const mine = cur.seats[actor] === myId;
   if (late >= (mine ? 0 : GRACE_MS) && (mine || mySeat() >= 0)) autoMove(cur.turnAt);
 }
@@ -2774,8 +2798,9 @@ function render() {
     const cls = team(s) === us ? 'us' : 'them';
     const left = h.hands[s].length;
     const backs = Array.from({ length: left }, () => '<span class="card back"></span>').join('');
-    const role = [s === st.dealer ? 'deu as cartas' : '', s === h.mao ? 'mão' : ''].filter(Boolean).join(' · ');
-    seatsHtml += `<div class="seat ${cls} ${s === actor ? 'turn' : ''}" data-key="${esc(st.seats[s] || '')}" style="left:${p.x}%;top:${p.y}%">${avatarHtml(st.seats[s], nick(st, s))}<span class="name">${esc(nick(st, s))}</span><span class="mini">${backs}</span>${role ? `<span class="role">${role}</span>` : ''}</div>`;
+    const shown = h.mostradas && h.mostradas[s];
+    const cardsRow = shown ? `<span class="mini shown">${shown.map(c => cardHtml(c, h.vira)).join('')}</span>` : `<span class="mini">${backs}</span>`;
+    seatsHtml += `<div class="seat ${cls} ${s === actor ? 'turn' : ''}" data-seat="${s}" data-key="${esc(st.seats[s] || '')}" style="left:${p.x}%;top:${p.y}%">${avatarHtml(st.seats[s], nick(st, s))}<span class="name">${esc(nick(st, s))}${s === st.dealer ? '<span class="pe-chip" title="Pé: joga por último">PÉ</span>' : ''}</span>${cardsRow}${s === h.mao ? '<span class="role">mão</span>' : ''}</div>`;
   }
   // cartas jogadas: rodada atual, ou a última encerrada
   let showRound = h.played[r] && h.played[r].length ? r : r - 1;
@@ -2798,7 +2823,12 @@ function render() {
   }).join('');
   const viraHtml = `<div class="score vira-tile"><h3>Vira</h3><div class="row" style="gap:8px;flex-wrap:nowrap">${cardHtml(h.vira, null)}<span class="vlbl">manilha<br><b class="mrk">${manilhaRank(h.vira)}</b></span></div></div>`;
   const lastTrick = plays.length && old && st.phase === 'play' ? '<div class="last-trick">mão anterior</div>' : '';
-  const banner = st.phase === 'truco' ? `<div class="banner">${RAISE_NAME[h.pending.to]}!</div>` : '';
+  // aviso pequeno na frente de quem pediu (a minha cadeira é embaixo, perto da mão)
+  let banner = '';
+  if (st.phase === 'truco') {
+    const c = h.pending.caller, q = seated && c === me ? { x: 50, y: 84 } : pos(c, [24, 25]);
+    banner = `<div class="banner" data-caller="${c}" style="left:${q.x}%;top:${q.y}%">${RAISE_NAME[h.pending.to]}!</div>`;
+  }
 
   // minha mão
   let handHtml = '';
@@ -2846,12 +2876,19 @@ function render() {
     const win = g.winner;
     msg = `<strong>${seated ? (win === us ? 'Vocês ganharam' : 'Vocês perderam') : teamLabel(win) + ' ganhou'}</strong> a partida ${g.n}, ${Math.min(st.score[win], 12)} a ${st.score[1 - win]}.`;
     if (st.torneio) msg = `<strong>${seated ? (win === us ? 'Vocês ganharam' : 'Vocês perderam') : teamLabel(win) + ' ganhou'}</strong> o jogo ${(st.torneio.g || 0) + 1} do confronto, ${Math.min(st.score[win], 12)} a ${st.score[1 - win]}.`;
-    if (!st.torneio && seated && g.delta[myId] !== undefined) msg += ` Seu saldo nessa partida: <strong>${fmt(g.delta[myId])}</strong>.`;
-    if (!solo && !st.torneio && seated && win === us) msg += ' Confirme em Pagamentos quando o Pix cair.';
+    if (st.aposta && st.aposta.pago && seated) msg += win === us ? ` Prêmio de <strong>${brl(st.aposta.pago.cada)}</strong> já está na sua Carteira.` : ` A entrada de ${brl(st.aposta.valor)} ficou no pote.`;
+    else if (solo && seated && g.delta[myId] !== undefined) msg += ` Seu saldo nessa partida: <strong>${fmt(g.delta[myId])}</strong>.`;
     if (solo) btns = `<button class="primary" data-act="newGame">Nova partida</button>`;
     else if (st.torneio) { msg += ' Placar atualizado na chave do torneio.'; btns = `<button class="primary" data-act="tour">Voltar ao torneio</button>`; }
     else { msg += ' Mesa encerrada.'; btns = `<button class="primary" data-act="lobby">Voltar ao saguão</button>`; }
   }
+  if (seated && ['play', 'truco', 'onze'].includes(st.phase)) msg = (me === st.dealer ? '<span class="pe-chip">VOCÊ É O PÉ</span> ' : me === h.mao ? '<span class="pe-chip">VOCÊ É MÃO</span> ' : '') + msg;
+  // o adversário correu: quem pediu pode mostrar as cartas que tinha
+  const res0 = st.result;
+  if (seated && res0 && res0.correu && ['handEnd', 'gameEnd'].includes(st.phase) && team(me) === res0.winner && h.hands[me] && h.hands[me].length && !(h.mostradas && h.mostradas[me])) {
+    btns = `<button class="shout" data-act="mostrar">Mostrar minhas cartas</button>` + btns;
+  }
+  if (h.mostradas && h.mostradas[me] && seated) msg += ' Você mostrou suas cartas.';
   if (!seated) msg = '<span class="muted">Você está assistindo.</span> ' + msg;
 
   const scoreUs = Math.min(st.score[us], 12), scoreThem = Math.min(st.score[them], 12);
@@ -2989,12 +3026,14 @@ function animateTable(st, hk, me, prevHand) {
   const p = h && h.pending;
   const pk = st.phase === 'truco' && p ? `${hk}|${p.to}|${p.caller}` : null;
   if (pk && pk !== anim.pending && !fresh) {
-    shout(`${RAISE_NAME[p.to]}!`, `${nick(st, p.caller)} pediu`, '');
+    shout(`${RAISE_NAME[p.to]}!`, `${nick(st, p.caller)} pediu`, '', $app.querySelector('.mesa .banner'));
+    anim.resp = p.responder;
     if (me >= 0 && p.responder === me && navigator.vibrate) navigator.vibrate([90, 50, 90]);
   } else if (!fresh && anim.phase === 'truco' && st.phase !== 'truco' && anim.pending && anim.pending.startsWith(hk + '|')) {
     // resposta: aceitou ou correu
-    if (st.phase === 'handEnd' || st.phase === 'gameEnd') shout('Correu!', '', 'run');
-    else if (st.phase === 'play') shout('Aceitou!', `valendo ${h.value}`, 'ok');
+    const at = seatAnchor(st, anim.resp);
+    if (st.phase === 'handEnd' || st.phase === 'gameEnd') shout('Correu!', '', 'run', at);
+    else if (st.phase === 'play') shout('Aceitou!', `valendo ${h.value}`, 'ok', at);
   }
   if (pk) anim.pending = pk;
   anim.phase = st.phase;
@@ -3021,8 +3060,36 @@ function flyCard(el, k, dx, dy, spin, from) {
   a.onfinish = a.oncancel = done;
   setTimeout(done, 900); // se a aba estiver em segundo plano
 }
-function shout(text, sub, kind) {
-  document.querySelectorAll('.fx').forEach(e => e.remove());
+// a cadeira de alguém na mesa (a minha é a mão, embaixo)
+function seatAnchor(st, seat) {
+  if (seat == null || seat < 0) return null;
+  if (seat === mySeat()) return $app.querySelector('.hand');
+  return $app.querySelector(`.mesa .seat[data-seat="${seat}"]`);
+}
+// Aviso pequeno que aparece em cima de quem falou (truco, aceitou, correu).
+function shoutAt(text, sub, kind, anchor) {
+  const r = anchor.getBoundingClientRect();
+  const el = document.createElement('div');
+  el.className = 'fx-mini ' + (kind || '');
+  el.setAttribute('role', 'status');
+  el.innerHTML = `${esc(text)}${sub ? `<small>${esc(sub)}</small>` : ''}`;
+  el.style.left = Math.min(innerWidth - 70, Math.max(70, r.left + r.width / 2)) + 'px';
+  el.style.top = Math.max(40, r.top + r.height / 2) + 'px';
+  document.body.appendChild(el);
+  const ms = kind ? 1300 : 1600;
+  setTimeout(() => el.remove(), ms + 100);
+  if (calmMotion() || !el.animate) return;
+  el.animate([
+    { transform: 'translate(-50%, -50%) scale(.3) rotate(-8deg)', opacity: 0 },
+    { transform: 'translate(-50%, -50%) scale(1.12) rotate(-4deg)', opacity: 1, offset: .2 },
+    { transform: 'translate(-50%, -50%) scale(1) rotate(-4deg)', opacity: 1, offset: .3 },
+    { transform: 'translate(-50%, -50%) scale(1) rotate(-4deg)', opacity: 1, offset: .82 },
+    { transform: 'translate(-50%, -70%) scale(.9) rotate(-4deg)', opacity: 0 },
+  ], { duration: ms, fill: 'both', easing: 'ease-out' });
+}
+function shout(text, sub, kind, anchor) {
+  document.querySelectorAll('.fx, .fx-mini').forEach(e => e.remove());
+  if (anchor) return shoutAt(text, sub, kind, anchor);
   const big = !kind, ms = big ? 1700 : 1150;
   const el = document.createElement('div');
   el.className = 'fx ' + (kind || '');
@@ -3121,7 +3188,7 @@ function renderSeating(st, me) {
     <div class="grid2">
       <section class="panel">
         <h2>Mesa <span class="code">${esc(st.code)}</span></h2>
-        <p class="muted">${st.torneio ? `Jogo ${(st.torneio.g || 0) + 1} do torneio <b>${esc(st.torneio.nome || '')}</b> (melhor de 3). Quando os 4 estiverem aqui, toquem em Começar partida.` : `Mande o código para a turma. ${modeLabel(st.n)}, ${st.stake ? `entrada de R$ ${esc(st.stake)} por jogador, paga com o saldo da Carteira quando a partida começar` : 'partida grátis, sem valer saldo'}.`}</p>
+        <p class="muted">${st.torneio ? `Jogo ${(st.torneio.g || 0) + 1} do torneio <b>${esc(st.torneio.nome || '')}</b> (melhor de 3). Quando os 4 estiverem aqui, toquem em Começar partida.` : `Mande o código para a turma. ${modeLabel(st.n)}, ${st.stake ? `entrada de R$ ${esc(st.stake)} por jogador, paga com o saldo da Carteira quando a partida começar` : 'partida grátis, sem valer saldo'}. A partida começa sozinha quando a mesa encher.`}</p>
         ${!account ? '<p class="notice">Entre com seu usuário no saguão para poder sentar.</p>' : ''}
         <div class="seats-lobby">${rows}</div>
         <div class="row"><button class="primary" id="start" ${filled === st.n && me >= 0 && !busy ? '' : 'disabled'}>Começar partida</button>

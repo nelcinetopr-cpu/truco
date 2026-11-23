@@ -148,7 +148,7 @@
 
   // Uma jogada do jogador da cadeira `seat`. Devolve true se valeu, false se não vale.
   // action: { type: 'play', index, covered } | { type: 'truco' | 'accept' | 'run' | 'raise' |
-  //          'onzePlay' | 'onzeRun' | 'next' | 'newGame' }
+  //          'onzePlay' | 'onzeRun' | 'next' | 'newGame' | 'mostrar' }
   // opts.allowNewGame: nova partida na mesma mesa (só no treino); opts.rng: sorteio das cartas.
   function applyAction(st, seat, action, opts = {}) {
     const h = st.hand, p = h && h.pending, type = action && action.type;
@@ -176,6 +176,7 @@
         if (st.phase !== 'truco' || p.responder !== seat) return false;
         addLog(st, `${nick(st, seat)} correu.`);
         endHand(st, p.by, h.value, 'o outro time correu');
+        st.result.correu = true; // quem pediu pode mostrar as cartas
         return true;
       case 'raise':
         if (st.phase !== 'truco' || p.responder !== seat || p.to >= 12) return false;
@@ -193,6 +194,16 @@
         addLog(st, `${teamLabel(team(seat))} correu da mão de onze.`);
         endHand(st, 1 - team(seat), 1, 'correram da mão de onze');
         return true;
+      case 'mostrar': {
+        // o adversário correu do truco: quem pediu (e o parceiro) pode mostrar as cartas que tinha
+        const r = st.result;
+        if (!h || !r || !r.correu || !['handEnd', 'gameEnd'].includes(st.phase) || team(seat) !== r.winner) return false;
+        const cards = h.hands[seat] || [];
+        if (!cards.length || (h.mostradas && h.mostradas[seat])) return false;
+        h.mostradas = { ...(h.mostradas || {}), [seat]: cards.slice() };
+        addLog(st, `${nick(st, seat)} mostrou as cartas: ${cards.map(cardLabel).join(' ')}.`);
+        return true;
+      }
       case 'next':
         if (st.phase !== 'handEnd') return false;
         st.dealer = (st.dealer + 1) % st.n;
@@ -220,6 +231,7 @@
     } else if (st.phase === 'truco') {
       addLog(st, `Tempo esgotado: ${nick(st, actor)} não respondeu e correu.`);
       endHand(st, h.pending.by, h.value, 'tempo esgotado: o outro time correu');
+      st.result.correu = true;
     } else if (st.phase === 'onze') {
       addLog(st, `Tempo esgotado na mão de onze: ${teamLabel(team(actor))} correu.`);
       endHand(st, 1 - team(actor), 1, 'tempo esgotado na mão de onze');
