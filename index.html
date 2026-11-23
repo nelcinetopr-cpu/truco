@@ -1048,7 +1048,7 @@ function showLobby() {
     </div>
     <div class="grid2">
       <section class="panel" id="podium"><h2>Ranking</h2><p class="muted">Carregando…</p></section>
-      <section class="panel" id="fichas"><h2>Ranking de fichas</h2><p class="muted">Carregando…</p></section>
+      <section class="panel" id="fichas"><h2>Ranking de lucros</h2><p class="muted">Carregando…</p></section>
       <section class="panel" id="patos"><h2>Ranking de patos</h2><p class="muted">Carregando…</p></section>
     </div>
     <section class="panel">
@@ -1060,14 +1060,14 @@ function showLobby() {
       </div>
     </section>
     <section class="panel">${rulesHtml()}</section>`;
-  // pagamentos ao lado do ranking e chave Pix logo acima das regras
+  // foto logo acima das regras (o acerto agora é pela Carteira: sem chave Pix nem pagamentos)
   const rulesEl = $app.lastElementChild;
-  rulesEl.insertAdjacentHTML('beforebegin', `<div class="grid2"><section class="panel" id="photoPanel"></section><section class="panel" id="pixPanel"></section></div>`);
+  rulesEl.insertAdjacentHTML('beforebegin', `<section class="panel" id="photoPanel"></section>`);
   // carteira (saldo, depósito Pix e saque) e o banco da organização, logo no começo do saguão
   document.getElementById('podium').parentElement.insertAdjacentHTML('beforebegin', `<div class="grid2"><section class="panel" id="walletPanel"></section><section class="panel" id="bankAdmin" hidden></section></div>`);
   document.getElementById('podium').parentElement.insertAdjacentHTML('beforebegin', `<div class="grid2"><section class="panel" id="tourPanel"></section><section class="panel" id="orgPanel"></section></div>`);
-  document.getElementById('podium').parentElement.insertAdjacentHTML('afterend', `<div class="grid2"><section class="panel" id="payPanel"></section><section class="panel" id="profitPanel"></section></div>`);
-  renderPixPanel(); renderPayments(); renderProfit(); renderPhotoPanel(); renderTourPanel(); renderOrgPanel();
+  document.getElementById('podium').parentElement.insertAdjacentHTML('afterend', `<section class="panel" id="profitPanel"></section>`);
+  renderProfit(); renderPhotoPanel(); renderTourPanel(); renderOrgPanel();
   if (typeof loadCarteira === 'function') loadCarteira();
   startTourneyLobby();
   document.getElementById('solo').onclick = () => startSolo(+document.getElementById('soloN').value);
@@ -1459,13 +1459,13 @@ function periodStart(key) {
   return 0;
 }
 
+// lucro em centavos, só das partidas que valeram saldo da Carteira
 function profitFor(id, since) {
   let won = 0, lost = 0, wins = 0, losses = 0;
   for (const g of allGames || []) {
-    if (g.at < since) continue;
-    if (g.delta) { const v = g.delta[id]; if (v > 0) { won += v; wins++; } else if (v < 0) { lost -= v; losses++; } continue; }
-    if (g.winners.includes(id)) { won += g.value; wins++; }
-    else if (g.losers.includes(id)) { lost += g.value; losses++; }
+    if (g.at < since || !g.lucros || !(id in g.lucros)) continue;
+    const v = g.lucros[id];
+    if (v > 0) { won += v; wins++; } else if (v < 0) { lost -= v; losses++; }
   }
   return { won, lost, net: won - lost, wins, losses };
 }
@@ -1481,11 +1481,11 @@ function renderProfit() {
   el.innerHTML = `<h2>Lucro</h2>
     <div class="seg" role="tablist" aria-label="Período">${PERIODS.map(([k, t]) => `<button role="tab" aria-selected="${k === profitPeriod}" data-period="${k}">${t}</button>`).join('')}</div>
     <div class="profit">
-      <div class="net ${r.net > 0 ? 'pos' : r.net < 0 ? 'neg' : ''}"><span>Lucro</span><b>${fmt(r.net)}</b></div>
-      <div><span>Ganhou</span><b class="pos">$ ${r.won}</b><small>${r.wins} ${r.wins === 1 ? 'partida' : 'partidas'}</small></div>
-      <div><span>Perdeu</span><b class="neg">$ ${r.lost}</b><small>${r.losses} ${r.losses === 1 ? 'partida' : 'partidas'}</small></div>
+      <div class="net ${r.net > 0 ? 'pos' : r.net < 0 ? 'neg' : ''}"><span>Lucro</span><b>${fmtLucro(r.net)}</b></div>
+      <div><span>Ganhou</span><b class="pos">${brl(r.won)}</b><small>${r.wins} ${r.wins === 1 ? 'partida' : 'partidas'}</small></div>
+      <div><span>Perdeu</span><b class="neg">${brl(r.lost)}</b><small>${r.losses} ${r.losses === 1 ? 'partida' : 'partidas'}</small></div>
     </div>
-    <p class="muted" style="font-size:13px">${games ? `Soma das suas ${games} ${games === 1 ? 'partida' : 'partidas'} ${label}.` : `Nenhuma partida sua ${label}.`}</p>`;
+    <p class="muted" style="font-size:13px">${games ? `Prêmios menos entradas das suas ${games} ${games === 1 ? 'partida valendo saldo' : 'partidas valendo saldo'} ${label}.` : `Nenhuma partida sua valendo saldo ${label}.`}</p>`;
   el.querySelectorAll('[data-period]').forEach(b => (b.onclick = () => {
     profitPeriod = b.dataset.period;
     try { localStorage.setItem('truco:lucro', profitPeriod); } catch {}
@@ -1522,11 +1522,12 @@ async function recordGame(st) {
 function computeRanking(games) {
   games = [...games].sort((a, b) => a.at - b.at);
   const players = {}, h2h = {}, names = {};
-  const P = id => (players[id] ||= { id, wins: 0, played: 0, saldo: 0 });
+  const P = id => (players[id] ||= { id, wins: 0, played: 0, saldo: 0, pagas: 0 });
   for (const g of games) {
     Object.assign(names, g.names || {});
-    for (const w of g.winners) { const p = P(w); p.wins++; p.played++; p.saldo += g.value; }
-    for (const l of g.losers) { const p = P(l); p.played++; p.saldo -= g.value; }
+    for (const w of g.winners) { const p = P(w); p.wins++; p.played++; }
+    for (const l of g.losers) { const p = P(l); p.played++; }
+    for (const [k, v] of Object.entries(g.lucros || {})) { const p = P(k); p.saldo += v; p.pagas++; } // centavos
     for (const w of g.winners) for (const l of g.losers) {
       const [a, b] = [w, l].sort();
       const r = (h2h[a + '|' + b] ||= { a, b, wins: { [a]: 0, [b]: 0 }, last: null, streak: 0 });
@@ -1553,7 +1554,7 @@ function renderRanking({ ranking, patos, names, total }) {
   if (!pod || !pat || !chips) return;
   if (!total) {
     pod.innerHTML = '<h2>Ranking</h2><p class="muted">Ninguém terminou uma partida ainda. Quem ganhar a primeira abre o pódio.</p>';
-    chips.innerHTML = '<h2>Ranking de fichas</h2><p class="muted">Aparece aqui quem está ganhando mais fichas.</p>';
+    chips.innerHTML = '<h2>Ranking de lucros</h2><p class="muted">Aparece aqui quem está lucrando mais nas mesas valendo saldo.</p>';
     pat.innerHTML = '<h2>Ranking de patos</h2><p class="muted">Aparece aqui quem ganhou mais vezes de quem.</p>';
     return;
   }
@@ -1564,11 +1565,11 @@ function renderRanking({ ranking, patos, names, total }) {
       <b>${nm(p.id)}</b>${me(p.id)}
       <span class="muted">${p.wins} ${p.wins === 1 ? 'vitória' : 'vitórias'}</span>
     </div>`).join('');
-  const byChips = [...ranking].sort((x, y) => y.saldo - x.saldo || y.wins - x.wins);
-  const chipRows = byChips.slice(0, 5).map((p, i) => `<tr><td>${i + 1}</td><td>${nm(p.id)}${me(p.id)}</td><td class="${p.saldo > 0 ? 'pos' : p.saldo < 0 ? 'neg' : ''}">${fmt(p.saldo)}</td></tr>`).join('');
-  chips.innerHTML = `<h2>Ranking de fichas</h2>
-    <div class="table-scroll"><table class="ledger rank"><thead><tr><th>#</th><th>Jogador</th><th>Saldo</th></tr></thead><tbody>${chipRows}</tbody></table></div>
-    <p class="muted" style="font-size:13px">Soma do que cada um ganhou menos o que perdeu, em todas as partidas.</p>`;
+  const byChips = ranking.filter(p => p.pagas).sort((x, y) => y.saldo - x.saldo || y.wins - x.wins);
+  const chipRows = byChips.slice(0, 10).map((p, i) => `<tr><td>${i + 1}</td><td>${nm(p.id)}${me(p.id)}</td><td class="${p.saldo > 0 ? 'pos' : p.saldo < 0 ? 'neg' : ''}">${fmtLucro(p.saldo)}</td></tr>`).join('');
+  chips.innerHTML = `<h2>Ranking de lucros</h2>
+    ${chipRows ? `<div class="table-scroll"><table class="ledger rank"><thead><tr><th>#</th><th>Jogador</th><th>Lucro</th></tr></thead><tbody>${chipRows}</tbody></table></div>` : '<p class="muted">Ninguém jogou mesa valendo saldo ainda.</p>'}
+    <p class="muted" style="font-size:13px">Prêmios menos entradas de cada um, nas mesas valendo saldo.</p>`;
   const rows = ranking.slice(0, 50).map((p, i) => `<tr class="${i < 3 ? 'top top' + (i + 1) : ''}"><td>${i < 3 ? medal[i] : i + 1}</td><td>${nm(p.id)}${me(p.id)}</td><td>${p.wins}</td><td>${p.played}</td></tr>`).join('');
   pod.innerHTML = `<h2>Ranking</h2>
     <div class="podium">${top}</div>
@@ -3146,6 +3147,7 @@ function renderSeating(st, me) {
 }
 
 const fmt = v => (v > 0 ? '+' : v < 0 ? '−' : '') + '$ ' + Math.abs(v);
+const fmtLucro = c => (c > 0 ? '+' : c < 0 ? '−' : '') + 'R$ ' + (Math.abs(c) / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const modeLabel = n => `${n / 2}x${n / 2}`;
 function ledgerHtml(st) {
   if (!st.torneio && !solo) {
