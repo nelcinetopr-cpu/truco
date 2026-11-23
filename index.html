@@ -542,10 +542,10 @@ body.in-game .games { display: none; }
 <script src="firebase-config.js"></script>
 <script src="voz-config.js"></script>
 <script src="org-config.js"></script>
-<script src="truco-engine.js?v=20261123d"></script>
-<script src="poker.js?v=20261123d"></script>
+<script src="truco-engine.js?v=20261123e"></script>
+<script src="poker.js?v=20261123e"></script>
 <!-- ao mudar truco-engine.js, poker.js ou carteira.js, troque o ?v= para o navegador baixar de novo -->
-<script src="carteira.js?v=20261123d"></script>
+<script src="carteira.js?v=20261123e"></script>
 <script>
 /* =========================================================
    REGRAS — vêm do arquivo truco-engine.js (o mesmo que roda no servidor e nos testes)
@@ -2853,6 +2853,8 @@ function render() {
       if (canCallTruco(st, me)) btns += `<button class="shout" data-act="truco">${RAISE_NAME[NEXT_VALUE[h.value]]}!</button>`;
       if (r >= 1) btns += `<button id="cover" aria-pressed="${cover}">${cover ? 'Coberta: ligada' : 'Jogar coberta'}</button>`;
     } else msg = `Vez de <strong>${esc(nick(st, h.turn))}</strong>.`;
+    // correr da mão a qualquer momento: o outro time leva o que a mão vale agora
+    if (seated) btns += `<button class="danger" data-act="correr" data-confirm="Correr da mão? ${seated ? (st.n > 2 ? 'Eles levam' : 'O adversário leva') : ''} ${h.value} ${h.value === 1 ? 'tento' : 'tentos'}.">Correr (dá ${h.value})</button>`;
   } else if (st.phase === 'truco') {
     const p = h.pending;
     if (seated && p.responder === me) {
@@ -2941,7 +2943,10 @@ function render() {
     commit(s => applyAction(s, me, { type: 'play', index: i, covered: c }));
   }));
   const cv = document.getElementById('cover'); if (cv) cv.onclick = () => { cover = !cover; render(); };
-  $app.querySelectorAll('[data-act]').forEach(b => (b.onclick = () => (b.dataset.act === 'lobby' ? showLobby() : b.dataset.act === 'tour' ? openTournament(cur.torneio.tid) : act(b.dataset.act))));
+  $app.querySelectorAll('[data-act]').forEach(b => (b.onclick = () => {
+    if (b.dataset.confirm && !confirm(b.dataset.confirm)) return;
+    return b.dataset.act === 'lobby' ? showLobby() : b.dataset.act === 'tour' ? openTournament(cur.torneio.tid) : act(b.dataset.act);
+  }));
 }
 
 /* =========================================================

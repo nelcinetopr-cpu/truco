@@ -119,7 +119,17 @@
     addLog(st, w >= 0 ? `Vaza ${r + 1}: ${nick(st, lead.seat)} fez com ${lead.covered ? 'carta coberta' : cardLabel(lead.card)}${bySuit ? ' pelo naipe' : ''}.` : `Vaza ${r + 1} cangou (empate).`);
     const dec = decideHand(h.rw, h.lastRaise);
     const onlyTies = h.rw.every(x => x === -1);
-    if (dec !== null) return endHand(st, dec, h.value, bySuit ? 'empatou as três: ganhou o naipe mais forte' : onlyTies && dec >= 0 ? 'empatou com truco: quem pediu tinha que ganhar' : 'nas vazas');
+    // explica como a mão foi decidida (ajuda a conferir a regra na mesa)
+    const ord = ['primeira', 'segunda', 'terceira'];
+    const how = () => {
+      const [a, b] = h.rw;
+      if (h.rw.length === 2 && a >= 0 && b === -1) return 'fez a primeira e cangou a segunda';
+      if (h.rw.length === 2 && a === -1 && b >= 0) return 'cangou a primeira e fez a segunda';
+      if (h.rw.length === 2) return 'fez as duas primeiras';
+      if (h.rw[2] === -1) return `cangou a terceira: vale quem fez a ${ord[h.rw.findIndex(x => x !== -1)]}`;
+      return 'fez a terceira';
+    };
+    if (dec !== null) return endHand(st, dec, h.value, bySuit ? 'empatou as três: ganhou o naipe mais forte' : onlyTies && dec >= 0 ? 'empatou com truco: quem pediu tinha que ganhar' : how());
     h.played.push([]);
     h.turn = lead.seat;
   }
@@ -148,7 +158,7 @@
 
   // Uma jogada do jogador da cadeira `seat`. Devolve true se valeu, false se não vale.
   // action: { type: 'play', index, covered } | { type: 'truco' | 'accept' | 'run' | 'raise' |
-  //          'onzePlay' | 'onzeRun' | 'next' | 'newGame' | 'mostrar' }
+  //          'onzePlay' | 'onzeRun' | 'next' | 'newGame' | 'mostrar' | 'correr' }
   // opts.allowNewGame: nova partida na mesma mesa (só no treino); opts.rng: sorteio das cartas.
   function applyAction(st, seat, action, opts = {}) {
     const h = st.hand, p = h && h.pending, type = action && action.type;
@@ -194,6 +204,14 @@
         addLog(st, `${teamLabel(team(seat))} correu da mão de onze.`);
         endHand(st, 1 - team(seat), 1, 'correram da mão de onze');
         return true;
+      case 'correr': {
+        // correr da mão a qualquer momento (sem truco pendente): o outro time leva o que a mão vale
+        if (st.phase !== 'play' || !h) return false;
+        addLog(st, `${nick(st, seat)} correu da mão.`);
+        endHand(st, 1 - team(seat), h.value, `${teamLabel(team(seat))} correu da mão`);
+        st.result.correu = true;
+        return true;
+      }
       case 'mostrar': {
         // o adversário correu do truco: quem pediu (e o parceiro) pode mostrar as cartas que tinha
         const r = st.result;
