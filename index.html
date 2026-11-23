@@ -149,6 +149,14 @@ main#app { display: grid; gap: 18px; min-width: 0; }
 .played.win .card { box-shadow: 0 0 0 3px var(--brass), 0 6px 14px rgba(0,0,0,.5); }
 .played.old { opacity: 1; }
 .played.old .card { transform: scale(.88); }
+.hand-result { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 4; display: grid; gap: 2px; justify-items: center; text-align: center;
+  background: rgba(10, 22, 16, .9); border: 2px solid var(--line); border-radius: 12px; padding: 8px 14px; max-width: 80%; pointer-events: none; box-shadow: 0 8px 24px rgba(0,0,0,.5); }
+.hand-result b { font-family: var(--display); font-weight: 400; font-size: clamp(16px, 4.2vw, 24px); }
+.hand-result span { font-size: 13px; font-weight: 700; }
+.hand-result small { font-size: 11px; color: var(--muted); }
+.hand-result.us { border-color: var(--brass); } .hand-result.us b { color: var(--brass); }
+.hand-result.them { border-color: var(--them); } .hand-result.them b { color: var(--them); }
+.hand.done > * { opacity: .35 !important; filter: grayscale(.6); }
 .last-trick { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); font-size: 11px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); background: rgba(0,0,0,.35); padding: 3px 10px; border-radius: 99px; white-space: nowrap; pointer-events: none; }
 .vira-tile .card { width: 30px; font-size: 10px; transform: rotate(-6deg); }
 .vira-tile .vlbl { font-size: 12px; color: var(--muted); font-weight: 600; line-height: 1.2; }
@@ -2823,6 +2831,12 @@ function render() {
   }).join('');
   const viraHtml = `<div class="score vira-tile"><h3>Vira</h3><div class="row" style="gap:8px;flex-wrap:nowrap">${cardHtml(h.vira, null)}<span class="vlbl">manilha<br><b class="mrk">${manilhaRank(h.vira)}</b></span></div></div>`;
   const lastTrick = plays.length && old && st.phase === 'play' ? '<div class="last-trick">mão anterior</div>' : '';
+  // a mão acabou: diz no meio da mesa quem levou e como (a carta que sobrou não vale mais)
+  let handResult = '';
+  if (st.phase === 'handEnd' && st.result) {
+    const R = st.result, quem = R.winner < 0 ? 'Ninguém marca' : seated ? (R.winner === us ? 'Vocês levaram' : 'Eles levaram') : teamLabel(R.winner) + ' levou';
+    handResult = `<div class="hand-result ${R.winner >= 0 && seated ? (R.winner === us ? 'us' : 'them') : ''}"><b>${quem}${R.winner >= 0 ? ` ${R.points} ${R.points === 1 ? 'tento' : 'tentos'}` : ''}</b><span>${esc(R.reason || '')}</span><small>Mão encerrada · próxima já já</small></div>`;
+  }
   // aviso pequeno na frente de quem pediu (a minha cadeira é embaixo, perto da mão)
   let banner = '';
   if (st.phase === 'truco') {
@@ -2835,7 +2849,7 @@ function render() {
   const myTurn = seated && st.phase === 'play' && h.turn === me && !busy;
   if (seated) {
     const cards = h.hands[me];
-    handHtml = `<div class="hand ${myTurn ? 'playable' : ''}">${cards.map((c, i) => (!c ? '<span class="card back"></span>' :
+    handHtml = `<div class="hand ${myTurn ? 'playable' : ''} ${st.phase === 'handEnd' || st.phase === 'gameEnd' ? 'done' : ''}">${cards.map((c, i) => (!c ? '<span class="card back"></span>' :
       `<button class="card ${cardClass(c, h.vira)}" data-play="${i}" data-c="${c}" ${myTurn ? '' : 'disabled'} aria-label="${cardLabel(c)}${isManilha(c, h.vira) ? ', manilha' : ''}">${cardInner(c, h.vira)}</button>`)).join('')}</div>`;
   }
   let partnerHtml = '';
@@ -2917,7 +2931,7 @@ function render() {
         <div class="score"><h3>Vazas</h3><div class="pips" style="margin-top:8px">${pips}</div></div>
         ${viraHtml}
       </div>
-      <div class="mesa ${st.n === 6 ? 'six' : ''}">${seatsHtml}${playedHtml}${lastTrick}${banner}${endPop}
+      <div class="mesa ${st.n === 6 ? 'six' : ''}">${seatsHtml}${playedHtml}${lastTrick}${handResult}${banner}${endPop}
         ${seated ? (() => { const p = pos(me, [40, 40]); return `<div class="seat us me ${me === actor ? 'turn' : ''}" data-key="${esc(st.seats[me] || '')}" style="left:${p.x}%;top:${Math.min(p.y, 90)}%">${avatarHtml(st.seats[me], nick(st, me))}<span class="name">${esc(nick(st, me))} (você)</span></div>`; })() : ''}
       </div>
       ${solo ? '' : `<div class="mtools">${voiceOK() && canChat() ? '<button type="button" class="ptt rbtn" data-ptt aria-label="Segure para falar com a mesa">🎤</button>' : ''}<button type="button" class="chat-toggle rbtn" data-chatopen aria-label="Abrir conversa">💬${chatUnread ? `<span class="badge">${chatUnread}</span>` : ''}</button></div>`}
