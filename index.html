@@ -594,8 +594,7 @@ function mockDb() {
    em buscas e nas regras de segurança também ficam soltos no documento.
    ========================================================= */
 const TOP_FIELDS = ['updatedAt', 'aliveAt', 'closedAt', 'at', 'to', 'from', 'status', 'confirmedAt', 'uid', 'name', 'table', 'owner', 'orgs', 'p1', 'p2', 'torneio', 'createdAt', 'key'];
-const EMAIL_DOMAIN = 'truco.jogo';   // as contas do Firebase usam usuario@truco.jogo (nenhum e-mail é enviado)
-const pinPassword = pin => 'truco#' + pin; // o Firebase exige 6+ caracteres
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i;
 
 function fsDb(fs) {
   const enc = d => { const o = { j: JSON.stringify(d) }; for (const k of TOP_FIELDS) if (d[k] !== undefined) o[k] = d[k]; return o; };
@@ -654,8 +653,9 @@ function fsDb(fs) {
   return { doc: docRef, collection: p => colRef(p) };
 }
 
-/* Contas: no Firebase o login é do próprio Firebase Auth (usuário vira usuario@truco.jogo).
-   No modo de teste local continua o esquema antigo, com a senha guardada embaralhada no banco simulado. */
+/* Contas: login do Firebase Auth com e-mail e senha de verdade. O nome de usuário (o que aparece
+   na mesa) fica em contas/{usuario}, e usuarios/{uid} diz qual usuário é de cada login.
+   No modo de teste local, a senha fica embaralhada no banco simulado. */
 let fbAuth = null;
 // O truco de verdade é decidido no servidor (Cloud Functions, pasta functions/).
 // No treino contra robôs e no modo de teste local (sem Firebase) o navegador decide.
@@ -694,65 +694,79 @@ function mergeHand(st, m) {
   return v;
 }
 const authApi = {
-  async create(key, name, pin) {
+  async create(key, name, email, pw) {
     if (!fbAuth) {
-      const ref = db.doc('contas/' + key);
-      const s = await ref.get();
-      if (s.exists && s.data().hash) throw { code: 'exists' };
+      const ref = db.doc('contas/' + key), em = db.doc('emails/' + email);
+      if ((await ref.get()).exists) throw { code: 'exists' };
+      if ((await em.get()).exists) throw { code: 'email_exists' };
       const salt = Array.from(crypto.getRandomValues(new Uint8Array(8)), x => x.toString(16).padStart(2, '0')).join('');
-      await ref.set({ name, salt, hash: await pinHash(salt, pin), createdAt: Date.now() });
-      return name;
+      await ref.set({ name, salt, hash: await pinHash(salt, pw), createdAt: Date.now() });
+      await em.set({ key });
+      return { key, name };
     }
-    const email = key + '@' + EMAIL_DOMAIN, pw = pinPassword(pin);
-    let cred;
+    let cred, novo = true;
     try { cred = await fbAuth.createUserWithEmailAndPassword(email, pw); }
     catch (e) {
       if (e.code !== 'auth/email-already-in-use') throw { code: mapAuthError(e), raw: e.code };
-      // O login já existe. Se a senha bate, é uma conta que ficou pela metade (ex.: o cadastro foi apagado ao zerar): recupera.
-      try { cred = await fbAuth.signInWithEmailAndPassword(email, pw); }
-      catch { throw { code: 'exists' }; }
-      const s = await db.doc('contas/' + key).get().catch(() => null);
-      if (s && s.exists) return syncProfile(key, s.data(), cred.user);
+      // e-mail já tem login: se a senha bate e o cadastro ficou pela metade, termina o cadastro
+      try { cred = await fbAuth.signInWithEmailAndPassword(email, pw); } catch { throw { code: 'email_exists' }; }
+      novo = false;
+      const k = await keyOf(cred.user);
+      if (k) return { key: k, name: await nameOf(k) };
     }
-    await saveProfile(key, name, cred.user);
-    return name;
+    try {
+      const fs = firebase.firestore(), b = fs.batch();
+      b.set(fs.doc('contas/' + key), { name, uid: cred.user.uid, createdAt: Date.now() });
+      b.set(fs.doc('usuarios/' + cred.user.uid), { key });
+      await b.commit();
+    } catch (e) {
+      // nome de usuário já usado por outra pessoa: desfaz o login novo para o e-mail não ficar preso
+      const usado = await db.doc('contas/' + key).get().then(x => x.exists).catch(() => false);
+      if (novo) { try { await cred.user.delete(); } catch {} } else { try { await fbAuth.signOut(); } catch {} }
+      throw usado ? { code: 'exists' } : { code: 'save', raw: e && e.code };
+    }
+    return { key, name };
   },
-  async signIn(key, pin) {
+  async signIn(email, pw) {
     if (!fbAuth) {
-      const s = await db.doc('contas/' + key).get();
-      const d = s.exists ? s.data() : null;
-      if (!d || !d.hash) throw { code: 'not_found' };
-      if ((await pinHash(d.salt, pin)) !== d.hash) throw { code: 'wrong' };
-      return d.name;
+      const em = await db.doc('emails/' + email).get();
+      if (!em.exists) throw { code: 'not_found' };
+      const key = em.data().key, d = (await db.doc('contas/' + key).get()).data();
+      if (!d || (await pinHash(d.salt, pw)) !== d.hash) throw { code: 'wrong' };
+      return { key, name: d.name };
     }
     let cred;
-    try { cred = await fbAuth.signInWithEmailAndPassword(key + '@' + EMAIL_DOMAIN, pinPassword(pin)); }
+    try { cred = await fbAuth.signInWithEmailAndPassword(email, pw); }
     catch (e) { throw { code: mapAuthError(e), raw: e.code }; }
-    const s = await db.doc('contas/' + key).get().catch(() => null);
-    if (s && s.exists) return syncProfile(key, s.data(), cred.user);
-    // login certo, mas sem cadastro (apagado ao zerar): refaz o cadastro com o nome digitado
-    const typed = (document.getElementById('lgName') || {}).value || key;
-    await saveProfile(key, typed.trim(), cred.user);
-    return typed.trim();
+    const key = await keyOf(cred.user);
+    if (!key) { try { await fbAuth.signOut(); } catch {} throw { code: 'no_profile' }; }
+    return { key, name: await nameOf(key) };
   },
-  async verifyPin(pin) {
-    if (!fbAuth) { await authApi.signIn(myId, pin); return; }
+  async verifyPassword(pw) {
+    if (!fbAuth) {
+      const d = (await db.doc('contas/' + myId).get()).data();
+      if (!d || (await pinHash(d.salt, pw)) !== d.hash) throw { code: 'wrong' };
+      return;
+    }
     try {
       const u = fbAuth.currentUser;
-      await u.reauthenticateWithCredential(firebase.auth.EmailAuthProvider.credential(u.email, pinPassword(pin)));
+      await u.reauthenticateWithCredential(firebase.auth.EmailAuthProvider.credential(u.email, pw));
     } catch (e) { throw { code: mapAuthError(e) }; }
+  },
+  async reset(email) {
+    if (!fbAuth) throw { code: 'setup' };
+    try { await fbAuth.sendPasswordResetEmail(email); }
+    catch (e) { if (e.code !== 'auth/user-not-found') throw { code: mapAuthError(e), raw: e.code }; }
   },
   signOut() { if (fbAuth) fbAuth.signOut(); },
 };
-// Salva o cadastro (nome de exibição) da conta. Se falhar, desfaz o login para não deixar conta pela metade.
-async function saveProfile(key, name, user) {
-  try { await db.doc('contas/' + key).set({ name, uid: user.uid, createdAt: Date.now() }); }
-  catch (e) { try { await fbAuth.signOut(); } catch {} throw { code: 'save', raw: 'firestore/' + (e && e.code === 'invalid_argument' ? 'permission-denied' : 'unavailable') }; }
+// qual nome de usuário é deste login
+async function keyOf(user) {
+  try { const s = await firebase.firestore().doc('usuarios/' + user.uid).get(); return s.exists ? s.data().key : null; }
+  catch { return null; }
 }
-// Cadastro que ainda aponta para um login antigo (apagado ao zerar): atualiza para o login atual.
-async function syncProfile(key, data, user) {
-  if (data.uid !== user.uid) await saveProfile(key, data.name || key, user);
-  return data.name || key;
+async function nameOf(key) {
+  try { const s = await db.doc('contas/' + key).get(); return (s.exists && s.data().name) || key; } catch { return key; }
 }
 function mapAuthError(e) {
   const c = (e && e.code) || '';
@@ -761,13 +775,19 @@ function mapAuthError(e) {
   if (c === 'auth/wrong-password' || c === 'auth/invalid-credential' || c === 'auth/invalid-login-credentials') return 'wrong';
   if (c === 'auth/too-many-requests') return 'too_many';
   if (c === 'auth/operation-not-allowed') return 'setup';
+  if (c === 'auth/weak-password') return 'weak';
+  if (c === 'auth/invalid-email') return 'bad_email';
   if (c === 'auth/network-request-failed') return 'unavailable';
   return 'unavailable';
 }
 const AUTH_MSG = {
-  exists: 'Esse usuário já existe. Escolha outro nome ou entre com ele.',
-  not_found: 'Usuário não encontrado. Confira o nome ou crie a conta.',
-  wrong: 'Usuário ou senha errados.',
+  exists: 'Esse nome de usuário já é de outra pessoa. Escolha outro.',
+  email_exists: 'Esse e-mail já tem conta. Entre com ele, ou use "Esqueci a senha".',
+  no_profile: 'Seu cadastro ficou pela metade. Vá em "Criar conta nova" e use o mesmo e-mail e senha para terminar.',
+  not_found: 'Não achamos conta com esse e-mail. Confira ou crie a conta.',
+  wrong: 'E-mail ou senha errados.',
+  weak: 'A senha precisa ter pelo menos 6 caracteres.',
+  bad_email: 'Esse e-mail não é válido.',
   too_many: 'Muitas tentativas erradas. Espere uns minutos e tente de novo.',
   setup: 'O login por e-mail e senha ainda não foi ligado no Firebase.',
   unavailable: 'Não deu para entrar agora. Confira a internet e tente de novo.',
@@ -832,9 +852,9 @@ async function init() {
     if (emu) fns.useEmulator('127.0.0.1', 5001);
     const user = await new Promise(res => { const off = fbAuth.onAuthStateChanged(u => { off(); res(u); }); });
     account = null; myId = null; myNick = '';
-    if (user && user.email) {
-      const key = user.email.split('@')[0];
-      try { const s = await db.doc('contas/' + key).get(); myNick = s.exists ? s.data().name : key; } catch { myNick = key; }
+    const key = user ? await keyOf(user) : null;
+    if (key) {
+      myNick = await nameOf(key);
       account = { key, name: myNick }; myId = key;
     }
   } else {
@@ -984,14 +1004,16 @@ function showLobby() {
           <button type="button" role="tab" data-lgmode="in" aria-selected="true">Já tenho conta</button>
           <button type="button" role="tab" data-lgmode="new" aria-selected="false">Criar conta nova</button>
         </div>
-        <p class="muted" id="lgHelp">Entre com seu usuário e sua senha de 4 números.</p>
+        <p class="muted" id="lgHelp">Entre com seu e-mail e sua senha.</p>
         <form id="loginForm" class="row" novalidate>
-          <label style="flex:2 1 160px">Usuário<input id="lgName" maxlength="16" autocomplete="username" placeholder="Ex.: Rob"></label>
-          <label style="flex:1 1 100px">Senha (4 números)<input id="lgPin" type="password" inputmode="numeric" maxlength="4" autocomplete="current-password" placeholder="••••"></label>
-          <label style="flex:1 1 100px" id="lgPin2Wrap" hidden>Repita a senha<input id="lgPin2" type="password" inputmode="numeric" maxlength="4" autocomplete="new-password" placeholder="••••"></label>
+          <label style="flex:1 1 100%" id="lgNameWrap" hidden>Nome de usuário (aparece na mesa)<input id="lgName" maxlength="16" autocomplete="nickname" placeholder="Ex.: Rob"></label>
+          <label style="flex:2 1 200px">E-mail<input id="lgEmail" type="email" inputmode="email" autocomplete="username" autocapitalize="off" spellcheck="false" placeholder="voce@exemplo.com"></label>
+          <label style="flex:1 1 140px">Senha<input id="lgPin" type="password" autocomplete="current-password" placeholder="6 ou mais caracteres"></label>
+          <label style="flex:1 1 140px" id="lgPin2Wrap" hidden>Repita a senha<input id="lgPin2" type="password" autocomplete="new-password"></label>
           <p id="lgError" class="form-error" role="alert" hidden></p>
           <div class="row" style="flex:1 1 100%">
             <button class="primary" type="submit" id="lgEnter">Entrar</button>
+            <button type="button" class="small" id="lgReset">Esqueci a senha</button>
           </div>
         </form>
       </section>`;
@@ -1052,6 +1074,7 @@ function showLobby() {
   if (lf) {
     lf.onsubmit = e => { e.preventDefault(); login(loginMode === 'new'); };
     document.querySelectorAll('[data-lgmode]').forEach(b => (b.onclick = () => setLoginMode(b.dataset.lgmode)));
+    document.getElementById('lgReset').onclick = resetPassword;
     setLoginMode(loginMode);
   }
   document.getElementById('create').onclick = createTable;
@@ -1105,9 +1128,11 @@ function setLoginMode(mode) {
   document.querySelectorAll('[data-lgmode]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.lgmode === mode)));
   document.getElementById('lgTitle').textContent = isNew ? 'Criar conta' : 'Entrar';
   document.getElementById('lgHelp').textContent = isNew
-    ? 'Escolha um nome de usuário e uma senha de 4 números. Suas vitórias e fichas ficam guardadas nele para o ranking.'
-    : 'Entre com seu usuário e sua senha de 4 números.';
+    ? 'Escolha o nome que aparece na mesa e entre com seu e-mail e uma senha. O e-mail serve para recuperar a senha e receber os comprovantes do Pix.'
+    : 'Entre com seu e-mail e sua senha.';
   document.getElementById('lgPin2Wrap').hidden = !isNew;
+  document.getElementById('lgNameWrap').hidden = !isNew;
+  document.getElementById('lgReset').hidden = isNew;
   document.getElementById('lgPin').autocomplete = isNew ? 'new-password' : 'current-password';
   document.getElementById('lgEnter').textContent = isNew ? 'Criar conta' : 'Entrar';
   loginError('');
@@ -1119,19 +1144,21 @@ function loginError(msg) {
 }
 async function login(create) {
   const name = document.getElementById('lgName').value.trim().replace(/\s+/g, ' ');
-  const pin = document.getElementById('lgPin').value.trim();
+  const email = document.getElementById('lgEmail').value.trim().toLowerCase();
+  const pw = document.getElementById('lgPin').value;
   const key = userKey(name);
-  if (key.length < 3) return loginError('O usuário precisa ter pelo menos 3 letras ou números.');
-  if (!/^\d{4}$/.test(pin)) return loginError('A senha tem que ter exatamente 4 números.');
-  if (create && document.getElementById('lgPin2').value.trim() !== pin) return loginError('As duas senhas não são iguais.');
+  if (create && key.length < 3) return loginError('O nome de usuário precisa ter pelo menos 3 letras ou números.');
+  if (!EMAIL_RE.test(email)) return loginError('Escreva um e-mail válido.');
+  if (pw.length < 6) return loginError('A senha precisa ter pelo menos 6 caracteres.');
+  if (create && document.getElementById('lgPin2').value !== pw) return loginError('As duas senhas não são iguais.');
   loginError('');
   const btn = document.getElementById('lgEnter'); btn.disabled = true; btn.textContent = create ? 'Criando…' : 'Entrando…';
   const done = () => { btn.disabled = false; btn.textContent = create ? 'Criar conta' : 'Entrar'; };
   try {
-    const shown = create ? await authApi.create(key, name, pin) : await authApi.signIn(key, pin);
-    if (create) toast(`Conta ${name} criada.`);
-    account = { key, name: shown };
-    myId = key; myNick = shown;
+    const acc = create ? await authApi.create(key, name, email, pw) : await authApi.signIn(email, pw);
+    if (create) toast(`Conta ${acc.name} criada.`);
+    account = { key: acc.key, name: acc.name };
+    myId = acc.key; myNick = acc.name;
     saveAccount();
     startPayments();
     loginMode = 'in';
@@ -1140,6 +1167,15 @@ async function login(create) {
     done();
     loginError((AUTH_MSG[e && e.code] || AUTH_MSG.unavailable) + (e && e.raw ? ` (código: ${e.raw})` : ''));
   }
+}
+async function resetPassword() {
+  const email = document.getElementById('lgEmail').value.trim().toLowerCase();
+  if (!EMAIL_RE.test(email)) return loginError('Escreva seu e-mail no campo acima e clique de novo em "Esqueci a senha".');
+  try {
+    await authApi.reset(email);
+    loginError('');
+    toast('Se esse e-mail tiver conta, chegou um link para criar uma senha nova. Olhe também o spam.');
+  } catch (e) { loginError(AUTH_MSG[e && e.code] || AUTH_MSG.unavailable); }
 }
 function logout() {
   authApi.signOut();
@@ -1215,7 +1251,7 @@ function renderPixPanel() {
       <label style="flex:2 1 180px">Nome (titular da conta)<input id="pxNome" maxlength="60" value="${esc(p.nome || '')}" placeholder="Como aparece no banco"></label>
       <div class="fixed-type"><span>Tipo</span><b>Aleatória</b></div>
       <label style="flex:3 1 100%">Chave aleatória<input id="pxChave" maxlength="36" value="${esc(p.chave || '')}" placeholder="Ex.: 1a2b3c4d-1a2b-1a2b-1a2b-1a2b3c4d5e6f" autocomplete="off" spellcheck="false"></label>
-      <label style="flex:1 1 140px">Sua senha (4 números)<input id="pxPin" type="password" inputmode="numeric" maxlength="4" placeholder="••••"></label>
+      <label style="flex:1 1 140px">Sua senha<input id="pxPin" type="password" autocomplete="current-password"></label>
       <div class="row" style="flex:1 1 100%"><button class="primary" type="submit">Salvar chave</button>${p.chave ? '<button type="button" id="pxCancel">Cancelar</button>' : ''}</div>
     </form>`;
   document.getElementById('pixForm').onsubmit = e => { e.preventDefault(); savePix(); };
@@ -1227,12 +1263,12 @@ async function savePix() {
   const nome = document.getElementById('pxNome').value.trim();
   const tipo = 'Aleatória';
   const chave = document.getElementById('pxChave').value.trim().toLowerCase();
-  const pin = document.getElementById('pxPin').value.trim();
+  const pin = document.getElementById('pxPin').value;
   if (!nome || !chave) return toast('Preencha o nome e a chave.');
   if (!PIX_RANDOM.test(chave)) return toast('Essa não é uma chave aleatória. Ela tem 32 letras e números separados por traços, como 1a2b3c4d-1a2b-1a2b-1a2b-1a2b3c4d5e6f.');
-  if (!/^\d{4}$/.test(pin)) return toast('Digite sua senha de 4 números para salvar.');
+  if (!pin) return toast('Digite sua senha para salvar.');
   try {
-    try { await authApi.verifyPin(pin); } catch { return toast('Senha errada.'); }
+    try { await authApi.verifyPassword(pin); } catch { return toast('Senha errada.'); }
     const data = { nome, tipo, chave, updatedAt: Date.now() };
     await db.doc('pix/' + myId).set(data);
     pixCache[myId] = data;
