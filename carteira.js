@@ -207,7 +207,7 @@ async function loadLucros() {
 const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 const nomeMes = m => `${MESES[+m.slice(5, 7) - 1]}/${m.slice(0, 4)}`;
 function renderLucros(el) {
-  const L = cart.lucros, dono = orgCfg && orgCfg.owner === myId;
+  const L = cart.lucros, dono = isOrg(); // dono e organizadores mexem
   if (!L) { el.innerHTML = `<h2>Banco (organização)</h2>${bankTabs()}<p class="muted">Carregando…</p>`; bindBankTabs(el); return; }
   const t = L.total, cor = v => (v > 0 ? 'pos' : v < 0 ? 'neg' : '');
   el.innerHTML = `<h2>Banco (organização)</h2>${bankTabs()}
@@ -249,7 +249,7 @@ function renderBankAdmin() {
   const a = cart.admin;
   if (!a) { el.innerHTML = '<h2>Banco (organização)</h2><p class="muted">Carregando…</p>'; return; }
   const c = a.conferencia, cfg = a.config, teste = cfg.moeda === 'FICHA';
-  const dono = orgCfg && orgCfg.owner === myId;
+  const dono = isOrg(); // dono e organizadores mexem nas configurações
   el.innerHTML = `<h2>Banco (organização)</h2>${bankTabs()}
     <div class="conf ${c.ok ? 'ok' : 'bad'}">
       <b>${c.ok ? 'Contas batendo' : 'As contas NÃO batem — saques suspensos'}</b>
@@ -275,7 +275,7 @@ function renderBankAdmin() {
     <h3>Extrato de um jogador</h3>
     <div class="row"><input id="admExtUser" placeholder="Usuário" style="flex:1 1 140px"><button class="small" data-badm="ext">Ver</button></div>
     <div id="admExt"></div>
-    ${dono ? `<details><summary>Caixa da casa e dar saldo (só o dono)</summary>
+    ${dono ? `<details><summary>Caixa da casa e dar saldo (organização)</summary>
       <p class="muted" style="font-size:13px">O <b>caixa da casa</b> é o seu dinheiro deixado no Mercado Pago para garantir os saques. Hoje: <b>${brl(c.capital || 0)}</b>. Para dar saldo a alguém (inclusive a você), o valor sai do caixa da casa.</p>
       <div class="row">
         <label style="flex:1 1 150px">Movimento<select id="cxTipo"><option value="entrada">Coloquei dinheiro no Mercado Pago</option><option value="retirada">Tirei dinheiro do Mercado Pago</option></select></label>
@@ -290,7 +290,7 @@ function renderBankAdmin() {
       </div>
       <div class="row"><button class="small primary" data-badm="creditar">Dar saldo</button></div>
     </details>` : ''}
-    ${dono ? `<details><summary>Configuração (só o dono)</summary>
+    ${dono ? `<details><summary>Configuração (organização)</summary>
       <div class="row">
         <label style="flex:1 1 140px">Modo<select id="cfgMoeda"><option value="FICHA" ${teste ? 'selected' : ''}>Fichas (teste, saldo fictício)</option><option value="BRL" ${teste ? '' : 'selected'}>Reais (Mercado Pago)</option></select></label>
         ${[['depositoMinimo', 'Depósito mínimo'], ['saqueMinimo', 'Saque mínimo'], ['tarifaSaque', 'Tarifa de saque'], ['limiteDiarioDeposito', 'Limite diário de depósito'], ['limiteDiarioSaque', 'Limite diário de saque']].map(([k, t]) => `<label style="flex:1 1 140px">${t} (R$)<input data-cfg="${k}" inputmode="decimal" value="${((cfg[k] || 0) / 100).toFixed(2).replace('.', ',')}"></label>`).join('')}
