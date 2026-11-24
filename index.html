@@ -520,8 +520,41 @@ body.in-game .games { display: none; }
 @media (prefers-reduced-motion: reduce) { .mp-total.flash, .live-dot { animation: none; } }
 .conf.ok > b { color: #8fd9a8; } .conf.bad { border-color: var(--red); } .conf.bad > b { color: var(--them); }
 .pk-ranks { margin: 0; padding-left: 22px; display: grid; gap: 2px; font-size: 14px; }
-.wallet { display: grid; gap: 2px; padding: 12px 14px; border-radius: 12px; background: var(--felt-deep); border: 1px solid var(--line); }
-.wallet b { font-family: var(--display); font-weight: 400; font-size: 28px; color: var(--brass); }
+.stack { display: grid; gap: 18px; align-content: start; min-width: 0; }
+#walletPanel, #invitePanel, #bankAdmin { align-content: start; }
+.wallet { display: grid; gap: 4px; width: 100%; text-align: left; padding: 16px 18px; border-radius: 14px; cursor: pointer; font: inherit; color: var(--text);
+  background: linear-gradient(135deg, #14523b 0%, var(--felt-deep) 70%); border: 1px solid var(--line); box-shadow: inset 0 1px 0 rgba(255,255,255,.05); }
+.wallet:hover { border-color: var(--brass); background: linear-gradient(135deg, #14523b 0%, var(--felt-deep) 70%); }
+.wallet[aria-expanded="true"] { border-color: var(--brass); }
+.wallet-label { font-size: 12px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); }
+.wallet b { font-family: var(--display); font-weight: 400; font-size: 34px; line-height: 1.1; color: var(--brass); font-variant-numeric: tabular-nums; }
+.wallet-foot { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-top: 6px; font-size: 13px; color: var(--muted); }
+.wallet-more { color: var(--brass); font-weight: 700; }
+.wallet-body { display: grid; gap: 10px; }
+.wallet-body h3, #invitePanel h3, .sheet h3 { margin: 6px 0 0; }
+.seg.mini button { padding: 6px 4px; font-size: 12px; }
+.ext-total { margin: 0; font-size: 13px; color: var(--muted); }
+.dep-form { display: grid; gap: 10px; }
+.dep-form label { display: grid; gap: 4px; }
+.dep-form button[type=submit] { justify-self: start; min-width: 140px; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.top-cart { display: inline-flex; gap: 6px; align-items: center; }
+.top-cart:empty { display: none; }
+.top-saldo { font-weight: 800; color: var(--brass); font-variant-numeric: tabular-nums; }
+.convite-hero { display: grid; gap: 2px; padding: 14px 16px; border-radius: 12px; background: linear-gradient(135deg, #4a3410 0%, var(--felt-deep) 75%); border: 1px solid #7a5a1f; }
+.convite-hero > b { font-family: var(--display); font-weight: 400; font-size: 24px; color: var(--brass); }
+.convite-hero span { font-size: 14px; }
+#invitePanel .pix-key .key-text { font-size: 12px; overflow-wrap: anywhere; color: var(--muted); }
+.sheet-ov { position: fixed; inset: 0; z-index: 50; display: grid; align-items: end; justify-items: center; background: rgba(4, 14, 10, .78); overflow: auto;
+  padding: calc(16px + env(safe-area-inset-top, 0px)) 0 0; }
+.sheet { width: min(520px, 100%); display: grid; gap: 12px; padding: 18px 16px calc(20px + env(safe-area-inset-bottom, 0px)); border-radius: 18px 18px 0 0; background: var(--panel); border: 1px solid var(--line); box-shadow: 0 -10px 40px rgba(0,0,0,.5); }
+.sheet-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.sheet-head h2 { margin: 0; }
+.sheet-saldo { margin: 0; font-size: 13px; color: var(--muted); }
+.sheet-saldo b { color: var(--brass); }
+@media (min-width: 600px) { .sheet-ov { align-items: center; padding: 16px; } .sheet { border-radius: 18px; } }
+@media (prefers-reduced-motion: no-preference) { .sheet { animation: sheetIn .2s ease-out; } }
+@keyframes sheetIn { from { transform: translateY(24px); opacity: 0; } }
 .movs { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 4px; font-size: 13px; }
 .movs li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 10px; padding: 6px 8px; border-radius: 8px; background: var(--felt-deep); }
 .movs li small { grid-column: 1 / -1; font-size: 11px; }
@@ -562,7 +595,7 @@ body.in-game .games { display: none; }
 <script src="truco-engine.js?v=20261124b"></script>
 <script src="poker.js?v=20261124b"></script>
 <!-- ao mudar truco-engine.js, poker.js ou carteira.js, troque o ?v= para o navegador baixar de novo -->
-<script src="carteira.js?v=20261124c"></script>
+<script src="carteira.js?v=20261124d"></script>
 <script>
 /* =========================================================
    REGRAS — vêm do arquivo truco-engine.js (o mesmo que roda no servidor e nos testes)
@@ -1030,7 +1063,7 @@ function showLobby() {
   cur = null; code = null;
   if (location.hash) history.replaceState(null, '', location.pathname + location.search);
   document.getElementById('topRight').innerHTML = account
-    ? `<span class="muted">Jogando como</span> <b class="team0">${esc(account.name)}</b> <button class="small" id="logout">Sair</button>` : '';
+    ? `<span class="muted">Jogando como</span> <b class="team0">${esc(account.name)}</b> <span id="topCart" class="top-cart"></span><button class="small" id="logout">Sair</button>` : '';
   paintGameNav();
   if (typeof pokerLeave === 'function') pokerLeave();
   if (currentGame === 'poker' && typeof showPokerLobby === 'function') { pkBindLogout(); return showPokerLobby(); }
@@ -1101,7 +1134,7 @@ function showLobby() {
   const rulesEl = $app.lastElementChild;
   rulesEl.insertAdjacentHTML('beforebegin', `<section class="panel" id="photoPanel"></section>`);
   // carteira (saldo, depósito Pix e saque) e o banco da organização, logo no começo do saguão
-  document.getElementById('podium').parentElement.insertAdjacentHTML('beforebegin', `<div class="grid2"><section class="panel" id="walletPanel"></section><section class="panel" id="bankAdmin" hidden></section></div>`);
+  document.getElementById('podium').parentElement.insertAdjacentHTML('beforebegin', `<div class="grid2"><div class="stack"><section class="panel" id="walletPanel"></section><section class="panel" id="invitePanel" hidden></section></div><section class="panel" id="bankAdmin" hidden></section></div>`);
   document.getElementById('podium').parentElement.insertAdjacentHTML('beforebegin', `<div class="grid2"><section class="panel" id="tourPanel"></section><section class="panel" id="orgPanel"></section></div>`);
   document.getElementById('podium').parentElement.insertAdjacentHTML('afterend', `<section class="panel" id="profitPanel"></section>`);
   renderProfit(); renderPhotoPanel(); renderTourPanel(); renderOrgPanel();
