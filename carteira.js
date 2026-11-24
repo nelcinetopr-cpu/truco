@@ -6,7 +6,7 @@
    Carregado antes do código principal: usa callServer, fns, db, account, esc, toast...
    ========================================================= */
 const cart = { r: null, tab: 'depositar', dep: null, unsubDep: null, poll: null, admin: null, extrato: null };
-try { const t = localStorage.getItem('truco.carteiraTab'); if (['depositar', 'sacar', 'extrato'].includes(t)) cart.tab = t; } catch {}
+try { const t = localStorage.getItem('truco.carteiraTab'); if (['depositar', 'sacar', 'convidar', 'extrato'].includes(t)) cart.tab = t; } catch {}
 
 const brl = c => 'R$ ' + ((c || 0) / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const moedaTxt = (c, moeda) => (moeda === 'FICHA' ? `${brl(c)} <small class="muted">(teste)</small>` : brl(c));
@@ -17,7 +17,7 @@ const reaisParaCentavos = s => {
 const quando = t => new Date(t).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 const STATUS_DEP = { aguardando: 'esperando o Pix', creditado: 'creditado', conferir: 'a organização vai conferir', devolver: 'pago por outro CPF: será devolvido', devolvido: 'devolvido', expirado: 'expirou', cancelado: 'cancelado', erro: 'erro ao gerar', criando: 'gerando' };
 const STATUS_SAQ = { pendente: 'esperando pagamento', pago: 'pago', recusado: 'recusado (valor voltou)' };
-const TIPO_LANC = { deposito: 'Depósito', 'saque-pedido': 'Saque pedido', 'saque-estornado': 'Saque recusado (estorno)', 'saque-pago': 'Saque pago', 'taxa-bancaria': 'Taxa bancária', 'credito-da-casa': 'Saldo dado pela casa', 'entrada-mesa': 'Entrada de mesa', 'premio-mesa': 'Prêmio de mesa', 'devolucao-mesa': 'Entrada devolvida' };
+const TIPO_LANC = { deposito: 'Depósito', 'saque-pedido': 'Saque pedido', 'saque-estornado': 'Saque recusado (estorno)', 'saque-pago': 'Saque pago', 'taxa-bancaria': 'Taxa bancária', 'credito-da-casa': 'Saldo dado pela casa', 'entrada-mesa': 'Entrada de mesa', 'premio-mesa': 'Prêmio de mesa', 'devolucao-mesa': 'Entrada devolvida', 'bonus-indicacao': 'Bônus (indicação)' };
 
 function stopCarteira() {
   if (cart.unsubDep) cart.unsubDep();
@@ -61,13 +61,16 @@ function renderCarteira() {
     };
     return;
   }
-  const tabs = [['depositar', 'Depositar'], ['sacar', 'Sacar'], ['extrato', 'Extrato']];
+  const tabs = [['depositar', 'Depositar'], ['sacar', 'Sacar'], ['convidar', 'Convidar'], ['extrato', 'Extrato']];
   let body = '';
   if (cart.tab === 'depositar') body = depositoHtml(r);
   else if (cart.tab === 'sacar') body = saqueHtml(r);
+  else if (cart.tab === 'convidar') body = convidarHtml(r);
   else body = extratoHtml(r);
+  const trav = r.bonus && r.bonus.travado;
   el.innerHTML = `<h2>Carteira</h2>
-    <div class="wallet"><b>${moedaTxt(r.saldo, r.moeda)}</b><span class="muted">${teste ? 'modo de teste: saldo fictício, não vale dinheiro' : `CPF ${esc(r.cpf)}`}</span></div>
+    <div class="wallet"><b>${moedaTxt(r.saldo, r.moeda)}</b><span class="muted">${teste ? 'modo de teste: saldo fictício, não vale dinheiro' : `CPF ${esc(r.cpf)}`}</span>
+      ${trav ? `<span class="bonus-line">🎁 ${brl(trav)} de bônus · jogue para liberar o saque</span>` : ''}</div>
     <div class="seg" role="tablist" aria-label="Carteira">${tabs.map(([k, t]) => `<button type="button" role="tab" aria-selected="${k === cart.tab}" data-ctab="${k}">${t}</button>`).join('')}</div>
     ${body}`;
   el.querySelectorAll('[data-ctab]').forEach(b => (b.onclick = () => {
@@ -106,11 +109,36 @@ function saqueHtml(r) {
   return `${bloq ? '<p class="form-error">Saques suspensos temporariamente para conferência.</p>' : ''}
     <p class="muted" style="font-size:13px">O Pix vai para a chave <b>CPF ${esc(r.cpf)}</b> (o seu cadastro). ${r.regras.saquesPorDia} saque por dia, mínimo de ${brl(r.regras.saqueMinimo)}. O valor sai do saldo na hora e a organização faz o Pix.
     ${r.tarifaSeSacarAgora ? `<br>Tarifa de ${brl(r.tarifaSeSacarAgora)}: sem custo quando você já tiver jogado em entradas o valor que depositou.` : '<br>Sem tarifa.'}</p>
+    ${r.bonus && r.bonus.travado ? `<p class="notice" style="font-size:13px">Disponível para saque agora: <b>${brl(r.disponivelSaque)}</b>. ${brl(r.bonus.travado)} do seu saldo é bônus e libera quando você jogar o que falta (veja na aba Convidar).</p>` : ''}
     <form id="saqForm" class="row" novalidate>
       <label style="flex:1 1 140px">Valor (R$)<input id="saqValor" inputmode="decimal" placeholder="0,00" ${bloq ? 'disabled' : ''}></label>
       <div class="row" style="flex:1 1 100%"><button class="primary" type="submit" ${bloq ? 'disabled' : ''}>Pedir saque</button></div>
     </form>
     ${recentes.length ? `<h3>Seus saques</h3><ul class="movs">${recentes.map(x => `<li><span>${brl(x.valor)}${x.tarifa ? ` <span class="muted">(recebe ${brl(x.liquido)})</span>` : ''}</span><b class="${x.status === 'pago' ? 'pos' : 'muted'}">${esc(STATUS_SAQ[x.status] || x.status)}</b><small class="muted">${quando(x.criadoEm)}</small></li>`).join('')}</ul>` : ''}`;
+}
+
+// convite: link, regras, quem você convidou, e o código de quem te convidou
+function convidarHtml(r) {
+  const c = r.convites || {}, ind = r.indicacao || {}, x = ind.x || 5;
+  const link = `${location.origin}${location.pathname}#convite-${encodeURIComponent(c.codigo || '')}`;
+  const jaDepositou = (r.depositos || []).some(d => d.status === 'creditado');
+  const bonusLista = (r.bonus && r.bonus.lista) || [];
+  if (ind.ativa === false) return '<p class="muted">O programa de indicação está pausado no momento.</p>';
+  return `<p style="font-size:14px;margin-top:4px"><b>Convide a turma e ganhe ${brl(ind.valor)}</b> quando o seu convidado fizer o primeiro depósito. O convidado ganha <b>${ind.pct}% do primeiro depósito</b> de bônus.</p>
+    <p class="muted" style="font-size:12px">Os bônus podem ser usados nas mesas na hora, mas só podem ser sacados depois de jogar ${x}x o valor do bônus em entradas de mesa.</p>
+    <div class="pix-key"><span class="key-text">${esc(link)}</span><button type="button" class="small primary" data-copy="${esc(link)}">Copiar link</button></div>
+    ${navigator.share ? `<div class="row"><button type="button" class="small" data-share="${esc(link)}">Enviar pelo WhatsApp…</button></div>` : ''}
+    <p class="muted" style="font-size:12px">Seu código de convite: <b>${esc(c.codigo || '')}</b></p>
+    ${bonusLista.length ? `<h3>Seus bônus</h3><ul class="movs">${bonusLista.map(b => `<li><span>${esc(b.texto || 'Bônus')} · ${brl(b.valor)}</span><b class="${b.liberado ? 'pos' : 'muted'}">${b.liberado ? 'liberado para saque' : `jogou ${brl(b.jogou)} de ${brl(b.meta)}`}</b><small class="muted">${b.liberado ? '' : `falta ${brl(b.meta - b.jogou)}`}</small></li>`).join('')}</ul>` : ''}
+    <h3>Quem você convidou</h3>
+    ${(c.convidados || []).length ? `<ul class="movs">${c.convidados.map(v => `<li><span>${esc(v.nome)}</span><b class="${v.status === 'pago' ? 'pos' : 'muted'}">${v.status === 'pago' ? `+${brl(v.bonus)} de bônus` : 'esperando o 1º depósito'}</b><small class="muted">${quando(v.at)}</small></li>`).join('')}</ul>` : '<p class="muted">Ninguém ainda. Mande o seu link.</p>'}
+    ${c.indicadoPor ? `<p class="muted" style="font-size:13px">Você foi convidado por <b>${esc(c.indicadoPor.nome || c.indicadoPor.key)}</b>.</p>`
+      : jaDepositou ? '' : `<h3>Alguém te convidou?</h3>
+    <form id="indForm" class="row" novalidate>
+      <label style="flex:2 1 160px">Código de quem te convidou<input id="indCod" autocapitalize="off" autocomplete="off" placeholder="nome de usuário"></label>
+      <div class="row" style="flex:1 1 100%"><button class="small primary" type="submit">Usar código</button></div>
+    </form>
+    <p class="muted" style="font-size:12px">Só vale antes do primeiro depósito.</p>`}`;
 }
 
 function extratoHtml() {
@@ -127,6 +155,15 @@ async function loadExtrato() {
 }
 
 function bindCarteira(r) {
+  const inf = document.getElementById('indForm');
+  if (inf) inf.onsubmit = async e => {
+    e.preventDefault();
+    const out = await callServer('carteiraIndicacao', { codigo: document.getElementById('indCod').value });
+    if (out) { toast(`Pronto: ${out.nomePor} te convidou. O bônus entra no seu primeiro depósito.`, 6000); loadCarteira(); }
+  };
+  document.querySelectorAll('#walletPanel [data-share]').forEach(b => (b.onclick = () => {
+    navigator.share({ title: 'TRUCO', text: `Vem jogar truco comigo! Entra pelo meu convite e ganha ${r.indicacao ? r.indicacao.pct : 50}% de bônus no primeiro depósito:`, url: b.dataset.share }).catch(() => {});
+  }));
   const df = document.getElementById('depForm');
   if (df) df.onsubmit = async e => {
     e.preventDefault();
@@ -214,13 +251,14 @@ function renderLucros(el) {
     <div class="pay-row" style="display:block">
       <p class="muted" style="margin:0 0 4px">Lucro da casa (desde o começo)${L.moeda === 'FICHA' ? ' · modo fichas (teste)' : ''}</p>
       <p class="pay-amount ${cor(t.lucro)}" style="margin:0">${brl(t.lucro)}</p>
-      <p class="muted" style="font-size:13px;margin:6px 0 0">Receita ${brl(t.ganhos)} − taxas bancárias ${brl(t.taxas)}</p>
+      <p class="muted" style="font-size:13px;margin:6px 0 0">Receita ${brl(t.ganhos)} − taxas bancárias ${brl(t.taxas)} − bônus ${brl(t.promocoes || 0)}</p>
     </div>
     <table class="ledger"><tbody>
       <tr><td>Taxa das partidas (${String(L.taxaPartida).replace('.', ',')}% · ${t.mesas} ${t.mesas === 1 ? 'mesa' : 'mesas'})</td><td class="pos">${brl(t.partidas)}</td></tr>
       <tr><td>Tarifas de saque</td><td class="pos">${brl(t.tarifas)}</td></tr>
       <tr><td><b>Receita</b></td><td><b>${brl(t.ganhos)}</b></td></tr>
       <tr><td>Taxas bancárias (Pix recebidos)</td><td class="neg">− ${brl(t.taxas)}</td></tr>
+      <tr><td>Bônus dados (indicação)</td><td class="neg">− ${brl(t.promocoes || 0)}</td></tr>
       <tr><td><b>Lucro</b></td><td class="${cor(t.lucro)}"><b>${brl(t.lucro)}</b></td></tr>
       <tr><td>Já retirado por você</td><td>− ${brl(t.retirado)}</td></tr>
       <tr><td>Reinvestido no caixa da casa</td><td>− ${brl(t.reinvestido)}</td></tr>
@@ -233,7 +271,7 @@ function renderLucros(el) {
     <div class="row"><button class="small primary" data-lc="retirar">Retirar lucro</button><button class="small" data-lc="reinvestir">Reinvestir no caixa</button></div>
     <p class="muted" style="font-size:12px">Retirar lucro = você transferiu esse valor da conta do Mercado Pago para você. Reinvestir = o valor fica no Mercado Pago como caixa da casa, para garantir saques ou dar saldo.</p>` : ''}
     <h3>Por mês</h3>
-    ${L.meses.length ? `<table class="ledger"><thead><tr><td>Mês</td><td>Receita</td><td>Taxas</td><td>Lucro</td></tr></thead><tbody>${L.meses.map(m => `<tr><td>${nomeMes(m.mes)}</td><td>${brl(m.ganhos)}</td><td>${brl(m.taxas)}</td><td class="${cor(m.lucro)}">${brl(m.lucro)}</td></tr>`).join('')}</tbody></table>` : '<p class="muted">Ainda não tem movimento.</p>'}`;
+    ${L.meses.length ? `<table class="ledger"><thead><tr><td>Mês</td><td>Receita</td><td>Taxas + bônus</td><td>Lucro</td></tr></thead><tbody>${L.meses.map(m => `<tr><td>${nomeMes(m.mes)}</td><td>${brl(m.ganhos)}</td><td>${brl(m.taxas + (m.promocoes || 0))}</td><td class="${cor(m.lucro)}">${brl(m.lucro)}</td></tr>`).join('')}</tbody></table>` : '<p class="muted">Ainda não tem movimento.</p>'}`;
   bindBankTabs(el);
   el.querySelectorAll('[data-lc]').forEach(b => (b.onclick = async () => {
     const v = reaisParaCentavos(document.getElementById('lcValor').value), retirar = b.dataset.lc === 'retirar';
@@ -270,6 +308,22 @@ function renderBankAdmin() {
           ? `<div class="row"><input placeholder="CPF de quem pagou (do extrato)" data-depcpf="${esc(d.id)}" style="flex:1 1 160px"><button class="small primary" data-depok="${esc(d.id)}">Conferir</button></div>`
           : `<div class="row"><input placeholder="ID do Pix de devolução" data-devtx="${esc(d.id)}" style="flex:1 1 160px"><button class="small" data-devok="${esc(d.id)}">Devolvido</button><button class="small primary" data-depcred="${esc(d.id)}">Era dele: creditar</button></div>`}
       </div>`).join('') : '<p class="muted">Nada para conferir.</p>'}
+    <h3>Avisos no WhatsApp</h3>
+    ${a.aviso ? `<p class="muted" style="font-size:13px">Os pedidos de saque chegam no seu WhatsApp <b>${esc(a.aviso.telefone)}</b>, com nome, CPF e valor, e um link para marcar como pago.</p>
+      <div class="row"><button class="small" data-badm="zapteste">Enviar teste</button><button class="small danger" data-badm="zapsai">Parar de receber</button></div>`
+    : `<details><summary>Receber os pedidos de saque no meu WhatsApp</summary>
+      <ol class="muted" style="font-size:13px;padding-left:18px">
+        <li>Abra <a href="https://www.callmebot.com/blog/free-api-whatsapp-messages/" target="_blank" rel="noopener">callmebot.com</a> e salve nos contatos do seu celular o número do bot que aparece lá.</li>
+        <li>Mande para ele no WhatsApp: <b>I allow callmebot to send me messages</b></li>
+        <li>Ele responde com a sua chave (apikey). Cole abaixo, junto com o seu número.</li>
+      </ol>
+      <div class="row">
+        <label style="flex:1 1 160px">Seu WhatsApp<input id="zapTel" inputmode="tel" placeholder="55 41 99999-8888"></label>
+        <label style="flex:1 1 120px">Chave (apikey)<input id="zapKey" autocomplete="off" placeholder="123456"></label>
+      </div>
+      <div class="row"><button class="small primary" data-badm="zapsalva">Salvar e enviar teste</button></div>
+      <p class="muted" style="font-size:12px">O CallMeBot é um serviço gratuito de fora: o nome, o CPF e o valor de cada saque passam por ele para chegar no seu WhatsApp.</p>
+    </details>`}
     <h3>Alertas (${a.alertas.length})</h3>
     ${a.alertas.length ? `<ul class="movs">${a.alertas.map(x => `<li><span>${esc(x.texto || x.tipo)}</span><button class="small" data-alerta="${esc(x.id)}">Visto</button><small class="muted">${quando(x.at)}</small></li>`).join('')}</ul>` : '<p class="muted">Nenhum alerta.</p>'}
     <h3>Extrato de um jogador</h3>
@@ -295,12 +349,23 @@ function renderBankAdmin() {
         <label style="flex:1 1 140px">Modo<select id="cfgMoeda"><option value="FICHA" ${teste ? 'selected' : ''}>Fichas (teste, saldo fictício)</option><option value="BRL" ${teste ? '' : 'selected'}>Reais (Mercado Pago)</option></select></label>
         ${[['depositoMinimo', 'Depósito mínimo'], ['saqueMinimo', 'Saque mínimo'], ['tarifaSaque', 'Tarifa de saque'], ['limiteDiarioDeposito', 'Limite diário de depósito'], ['limiteDiarioSaque', 'Limite diário de saque']].map(([k, t]) => `<label style="flex:1 1 140px">${t} (R$)<input data-cfg="${k}" inputmode="decimal" value="${((cfg[k] || 0) / 100).toFixed(2).replace('.', ',')}"></label>`).join('')}
         <label style="flex:1 1 100px">Saques por dia<input id="cfgSpd" inputmode="numeric" value="${cfg.saquesPorDia}"></label>
+        <label style="flex:1 1 140px">Indicação: quem convida ganha (R$)<input data-cfg="indicacaoValor" inputmode="decimal" value="${((cfg.indicacaoValor ?? 2000) / 100).toFixed(2).replace('.', ',')}"></label>
+        <label style="flex:1 1 120px">Bônus do convidado (% do 1º depósito)<input id="cfgBonusPct" inputmode="numeric" value="${cfg.bonusDepositoPct ?? 50}"></label>
+        <label style="flex:1 1 120px">Jogar quantas vezes o bônus para sacar<input id="cfgRollover" inputmode="numeric" value="${cfg.rolloverX ?? 5}"></label>
+        <label style="flex:1 1 140px"><span><input type="checkbox" id="cfgIndAtiva" ${cfg.indicacaoAtiva === false ? '' : 'checked'}> Indicação ligada</span></label>
         <label style="flex:1 1 100px">Taxa por partida (%)<input id="cfgTaxa" inputmode="decimal" value="${String(cfg.taxaPartida ?? 2).replace('.', ',')}"></label>
         <label style="flex:1 1 140px"><span><input type="checkbox" id="cfgBloq" ${cfg.saquesBloqueados ? 'checked' : ''}> Saques suspensos</span></label>
       </div>
       <div class="row"><button class="primary small" data-badm="cfg">Salvar configuração</button></div>
     </details>` : ''}`;
   bindBankAdmin();
+  // veio pelo link do WhatsApp: mostra o saque e já deixa o campo do ID do Pix pronto
+  if (window.SAQUE_ALVO) {
+    const alvo = el.querySelector(`[data-txid="${CSS.escape(window.SAQUE_ALVO)}"]`);
+    if (alvo) { alvo.closest('.pay-row')?.classList.add('destaque'); alvo.scrollIntoView({ block: 'center', behavior: 'smooth' }); setTimeout(() => alvo.focus(), 400); }
+    else toast('Esse saque já foi resolvido ou não está mais esperando.', 6000);
+    window.SAQUE_ALVO = null;
+  }
 }
 function bindBankAdmin() {
   const el = document.getElementById('bankAdmin');
@@ -332,6 +397,22 @@ function bindBankAdmin() {
         <ul class="movs">${out.lancamentos.map(l => `<li><span>${esc(TIPO_LANC[l.tipo] || l.tipo)} <span class="muted">${esc(l.moeda)}</span></span><b>${l.linhas.map(x => `${x.lado} ${esc(x.conta)} ${brl(x.valor)}`).join(' / ')}</b><small class="muted">${quando(l.at)}</small></li>`).join('') || '<li><span class="muted">Sem lançamentos.</span></li>'}</ul>`;
       return;
     }
+    if (a === 'zapsalva') {
+      const telefone = document.getElementById('zapTel').value, apikey = document.getElementById('zapKey').value.trim();
+      const ok = await callServer('adminAvisos', { telefone, apikey });
+      if (!ok) return;
+      const t = await callServer('adminAvisos', { teste: true });
+      toast(t && t.ok ? 'WhatsApp cadastrado. Confira a mensagem de teste.' : `Cadastrado, mas o teste não chegou${t && t.resposta ? ': ' + t.resposta : ''}. Confira o número e a chave.`, 7000);
+      return loadBankAdmin();
+    }
+    if (a === 'zapteste') {
+      const t = await callServer('adminAvisos', { teste: true });
+      return t && toast(t.ok ? 'Teste enviado. Confira seu WhatsApp.' : `O teste não chegou${t.resposta ? ': ' + t.resposta : ''}.`, 7000);
+    }
+    if (a === 'zapsai') {
+      if (!confirm('Parar de receber os pedidos de saque no WhatsApp?')) return;
+      return run('adminAvisos', { remover: true }, 'Você não vai mais receber os avisos.');
+    }
     if (a === 'caixa') {
       const v = reaisParaCentavos(document.getElementById('cxValor').value), tipo = document.getElementById('cxTipo').value;
       if (!(v > 0)) return toast('Escreva o valor.');
@@ -346,7 +427,7 @@ function bindBankAdmin() {
       return run('adminCreditar', { key, valor: v, motivo: document.getElementById('crMotivo').value.trim() }, 'Saldo adicionado.');
     }
     if (a === 'cfg') {
-      const novo = { moeda: document.getElementById('cfgMoeda').value, saquesPorDia: Number(document.getElementById('cfgSpd').value), saquesBloqueados: document.getElementById('cfgBloq').checked, taxaPartida: Number(document.getElementById('cfgTaxa').value.replace(',', '.')) };
+      const novo = { moeda: document.getElementById('cfgMoeda').value, saquesPorDia: Number(document.getElementById('cfgSpd').value), saquesBloqueados: document.getElementById('cfgBloq').checked, taxaPartida: Number(document.getElementById('cfgTaxa').value.replace(',', '.')), bonusDepositoPct: Number(document.getElementById('cfgBonusPct').value), rolloverX: Number(document.getElementById('cfgRollover').value), indicacaoAtiva: document.getElementById('cfgIndAtiva').checked };
       el.querySelectorAll('[data-cfg]').forEach(i => (novo[i.dataset.cfg] = reaisParaCentavos(i.value)));
       if (novo.moeda === 'BRL' && cart.admin.config.moeda !== 'BRL' && !confirm('Ligar o dinheiro de verdade? A partir daqui os depósitos são Pix reais pelo Mercado Pago.')) return;
       run('adminConfig', novo, 'Configuração salva.');

@@ -394,6 +394,8 @@ table.rank tr.top1 td:first-child { border-left-color: var(--brass); }
 .pix-key { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .pix-key .key-text { font-variant-numeric: tabular-nums; user-select: all; }
 .pay-row { display: grid; gap: 8px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--felt-deep); grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+.bonus-line { display: block; margin-top: 4px; font-size: 13px; font-weight: 700; color: var(--brass); }
+.pay-row.destaque { border-color: var(--brass); box-shadow: 0 0 0 2px var(--brass); }
 .pay-row.owe { grid-template-columns: minmax(0, 1fr); border-color: #7a2c24; }
 .pay-row.owe .pix { background: var(--panel); }
 ul.paid { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 4px; }
@@ -550,10 +552,10 @@ body.in-game .games { display: none; }
 <script src="firebase-config.js"></script>
 <script src="voz-config.js"></script>
 <script src="org-config.js"></script>
-<script src="truco-engine.js?v=20261123e"></script>
-<script src="poker.js?v=20261123e"></script>
+<script src="truco-engine.js?v=20261124a"></script>
+<script src="poker.js?v=20261124a"></script>
 <!-- ao mudar truco-engine.js, poker.js ou carteira.js, troque o ?v= para o navegador baixar de novo -->
-<script src="carteira.js?v=20261123e"></script>
+<script src="carteira.js?v=20261124a"></script>
 <script>
 /* =========================================================
    REGRAS — vêm do arquivo truco-engine.js (o mesmo que roda no servidor e nos testes)
@@ -891,8 +893,14 @@ async function init() {
   }
   startPayments();
   const h = location.hash.replace('#', '').toUpperCase();
+  // link do aviso de saque no WhatsApp: abre o saguão com aquele saque em destaque no Banco
+  if (h.startsWith('SAQUE-')) window.SAQUE_ALVO = location.hash.slice(7);
+  // link de convite: guarda quem convidou e aplica quando a pessoa entrar
+  if (h.startsWith('CONVITE-')) { try { localStorage.setItem('truco:convite', decodeURIComponent(location.hash.slice(9)).toLowerCase()); } catch {} }
+  setTimeout(aplicarConvite, 1500);
   if (POKER_ATIVO && h.startsWith('POKER-') && typeof openPokerTable === 'function') { currentGame = 'poker'; paintGameNav(); openPokerTable(h.slice(6)); }
   else if (h && /^[A-Z0-9]{4,8}$/.test(h)) openTable(h); else showLobby();
+  if (window.SAQUE_ALVO && !account) toast('Entre com sua conta para marcar o saque como pago.', 6000);
 }
 
 const tableRef = c => db.doc('mesas/' + c);
@@ -1028,6 +1036,7 @@ function showLobby() {
           <button type="button" role="tab" data-lgmode="in" aria-selected="true">Já tenho conta</button>
           <button type="button" role="tab" data-lgmode="new" aria-selected="false">Criar conta nova</button>
         </div>
+        ${conviteGuardado() ? `<p class="notice">🎁 Você veio pelo convite de <b>${esc(conviteGuardado())}</b>: crie sua conta e ganhe bônus no primeiro depósito.</p>` : ''}
         <p class="muted" id="lgHelp">Entre com seu e-mail e sua senha.</p>
         <form id="loginForm" class="row" novalidate>
           <label style="flex:1 1 100%" id="lgNameWrap" hidden>Nome de usuário (aparece na mesa)<input id="lgName" maxlength="16" autocomplete="nickname" placeholder="Ex.: Rob"></label>
@@ -1187,11 +1196,26 @@ async function login(create) {
     startPayments();
     loginMode = 'in';
     showLobby();
+    aplicarConvite();
   } catch (e) {
     done();
     loginError((AUTH_MSG[e && e.code] || AUTH_MSG.unavailable) + (e && e.raw ? ` (código: ${e.raw})` : ''));
   }
 }
+// quem entrou pelo link de convite: liga a conta a quem convidou (uma vez)
+let conviteAplicando = false;
+async function aplicarConvite() {
+  let c = null;
+  try { c = localStorage.getItem('truco:convite'); } catch {}
+  if (!c || !account || !fns || conviteAplicando) return;
+  conviteAplicando = true;
+  const out = await callServer('carteiraIndicacao', { codigo: c }, { quiet: true });
+  try { localStorage.removeItem('truco:convite'); } catch {}
+  conviteAplicando = false;
+  if (out) { toast(`Você entrou pelo convite de ${out.nomePor}. Ganha ${'bônus'} no primeiro depósito!`, 7000); if (typeof loadCarteira === 'function') loadCarteira(); }
+}
+function conviteGuardado() { try { return localStorage.getItem('truco:convite'); } catch { return null; } }
+
 async function resetPassword() {
   const email = document.getElementById('lgEmail').value.trim().toLowerCase();
   if (!EMAIL_RE.test(email)) return loginError('Escreva seu e-mail no campo acima e clique de novo em "Esqueci a senha".');
