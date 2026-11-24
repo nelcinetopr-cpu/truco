@@ -20,6 +20,7 @@ const STATUS_SAQ = { pendente: 'esperando pagamento', pago: 'pago', recusado: 'r
 const TIPO_LANC = { deposito: 'Depósito', 'saque-pedido': 'Saque pedido', 'saque-estornado': 'Saque recusado (estorno)', 'saque-pago': 'Saque pago', 'taxa-bancaria': 'Taxa bancária', 'credito-da-casa': 'Saldo dado pela casa', 'entrada-mesa': 'Entrada de mesa', 'premio-mesa': 'Prêmio de mesa', 'devolucao-mesa': 'Entrada devolvida', 'bonus-indicacao': 'Bônus (indicação)' };
 
 function stopCarteira() {
+  stopMpVivo();
   if (cart.unsubDep) cart.unsubDep();
   clearInterval(cart.poll);
   cart.unsubDep = null; cart.poll = null;
@@ -223,10 +224,69 @@ async function checkDeposito(manual) {
 /* ---------------- painel da organização ---------------- */
 async function loadBankAdmin() {
   const el = document.getElementById('bankAdmin'); if (!el) return;
-  if (!fns || !account || typeof isOrg !== 'function' || !isOrg()) { el.hidden = true; return; }
+  if (!fns || !account || typeof isOrg !== 'function' || !isOrg()) { el.hidden = true; stopMpVivo(); return; }
   el.hidden = false;
   const out = await callServer('adminPainel', {}, { quiet: true });
   cart.admin = out; renderBankAdmin();
+  if (out && out.config) watchMpVivo(out.config.moeda);
+}
+
+/* ---------- saldo no Mercado Pago ao vivo ----------
+   O Mercado Pago não deixa o site ler o saldo da conta. Mas todo centavo que entra
+   ou sai passa pelo livro-caixa, e a conta "custodia" é o que deveria estar lá.
+   Aqui o painel escuta os saldos do livro-caixa e muda na hora, sem recarregar. */
+const mpVivo = { moeda: null, unsub: null, contas: null, at: 0, ultimo: null, erro: false };
+function stopMpVivo() {
+  if (mpVivo.unsub) mpVivo.unsub();
+  Object.assign(mpVivo, { moeda: null, unsub: null, contas: null, at: 0, ultimo: null, erro: false });
+}
+function watchMpVivo(moeda) {
+  // lê direto do Firestore: os saldos são gravados pelo servidor, fora do formato do db do site
+  if (typeof firebase === 'undefined' || !firebase.apps.length || !moeda || (mpVivo.unsub && mpVivo.moeda === moeda)) { renderMpVivo(); return; }
+  stopMpVivo();
+  mpVivo.moeda = moeda;
+  mpVivo.unsub = firebase.firestore().collection('saldos').where('moeda', '==', moeda).onSnapshot(qs => {
+    const contas = {}; let at = 0;
+    qs.forEach(d => { const x = d.data(); contas[x.conta] = x.saldo || 0; at = Math.max(at, x.atualizadoEm || 0); });
+    mpVivo.contas = contas; mpVivo.at = at; mpVivo.erro = false;
+    renderMpVivo();
+  }, () => { mpVivo.erro = true; renderMpVivo(); });
+}
+function mpVivoResumo(contas) {
+  const r = { custodia: 0, jogadores: 0, potes: 0, reservado: 0, devolver: 0, capital: 0, receita: 0, taxas: 0, promocoes: 0 };
+  for (const [c, v] of Object.entries(contas)) {
+    if (c.startsWith('jogador:')) r.jogadores += v;
+    else if (c.startsWith('pote:')) r.potes += v;
+    else if (c === 'saque:reservado') r.reservado += v;
+    else if (c in r) r[c] += v;
+  }
+  r.lucro = r.receita - r.taxas - r.promocoes;            // o que a casa ganhou e ainda não tirou
+  r.livre = r.capital + r.lucro;                           // dá para tirar sem mexer no dos jogadores
+  r.soma = r.jogadores + r.potes + r.reservado + r.devolver + r.capital + r.lucro;
+  return r;
+}
+function renderMpVivo() {
+  const el = document.getElementById('mpVivo'); if (!el) return;
+  if (mpVivo.erro) { el.innerHTML = '<p class="muted" style="margin:0">Não consegui ler o saldo ao vivo (as regras novas do Firebase já foram publicadas?).</p>'; return; }
+  if (!mpVivo.contas) { el.innerHTML = '<p class="muted" style="margin:0">Ligando o saldo ao vivo…</p>'; return; }
+  const r = mpVivoResumo(mpVivo.contas), teste = mpVivo.moeda === 'FICHA';
+  const mudou = mpVivo.ultimo != null && mpVivo.ultimo !== r.custodia;
+  mpVivo.ultimo = r.custodia;
+  const linha = (t, v, cls = '') => `<tr><td>${t}</td><td class="${cls}">${brl(v)}</td></tr>`;
+  el.innerHTML = `
+    <p class="muted" style="margin:0"><span class="live-dot" aria-hidden="true"></span> Saldo no Mercado Pago, ao vivo${teste ? ' · modo fichas (teste)' : ''}</p>
+    <p class="mp-total${mudou ? ' flash' : ''}" aria-live="polite">${brl(r.custodia)}</p>
+    <table class="ledger"><tbody>
+      ${linha('Dos jogadores (saldos)', r.jogadores)}
+      ${r.potes ? linha('Em mesas jogando agora', r.potes) : ''}
+      ${linha('Saques a pagar', r.reservado)}
+      ${r.devolver ? linha('A devolver (Pix de outro CPF)', r.devolver) : ''}
+      ${linha('Caixa da casa', r.capital)}
+      ${linha('Lucro da casa ainda não retirado', r.lucro, r.lucro < 0 ? 'neg' : '')}
+      <tr><td><b>Seu, pode tirar sem mexer no dos jogadores</b></td><td class="${r.livre < 0 ? 'neg' : 'pos'}"><b>${brl(r.livre)}</b></td></tr>
+    </tbody></table>
+    ${r.soma !== r.custodia ? `<p class="neg" style="margin:0;font-size:13px">As partes somam ${brl(r.soma)}, diferente do total. Toque em “Conferir agora”.</p>` : ''}
+    <small class="muted">${mpVivo.at ? `Último movimento ${quando(mpVivo.at)}. ` : ''}Calculado pelo livro-caixa do site. Se o app do Mercado Pago mostrar <b>menos</b> que isso, avise.</small>`;
 }
 // abas do painel: Banco (o dia a dia) e Lucros (o que a casa ganhou)
 const bankTabs = () => `<div class="seg two" role="tablist" aria-label="Banco">${[['banco', 'Banco'], ['lucros', 'Lucros']].map(([k, t]) => `<button type="button" role="tab" aria-selected="${(cart.bankTab || 'banco') === k}" data-btab="${k}">${t}</button>`).join('')}</div>`;
@@ -289,6 +349,7 @@ function renderBankAdmin() {
   const c = a.conferencia, cfg = a.config, teste = cfg.moeda === 'FICHA';
   const dono = isOrg(); // dono e organizadores mexem nas configurações
   el.innerHTML = `<h2>Banco (organização)</h2>${bankTabs()}
+    <div class="conf mp-vivo" id="mpVivo"></div>
     <div class="conf ${c.ok ? 'ok' : 'bad'}">
       <b>${c.ok ? 'Contas batendo' : 'As contas NÃO batem — saques suspensos'}</b>
       <span>Em custódia <b>${brl(c.custodia)}</b> · saldos dos jogadores <b>${brl(c.jogadores)}</b> · saques a pagar <b>${brl(c.reservado)}</b> · receita <b>${brl(c.receita)}</b> · caixa da casa <b>${brl(c.capital || 0)}</b> · taxas bancárias <b>${brl(c.taxas)}</b></span>
@@ -345,6 +406,7 @@ function renderBankAdmin() {
       <div class="row"><button class="primary small" data-badm="cfg">Salvar configuração</button></div>
     </details>` : ''}`;
   bindBankAdmin();
+  renderMpVivo();
   // veio pelo link do WhatsApp: mostra o saque e já deixa o campo do ID do Pix pronto
   if (window.SAQUE_ALVO) {
     const alvo = el.querySelector(`[data-txid="${CSS.escape(window.SAQUE_ALVO)}"]`);

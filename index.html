@@ -511,6 +511,13 @@ body.in-game .games { display: none; }
 .pixqr { width: min(220px, 70vw); aspect-ratio: 1; background: #fff; border-radius: 10px; padding: 8px; }
 .pixcode { font-size: 12px; max-width: 100%; overflow-wrap: anywhere; }
 .conf { display: grid; gap: 6px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--felt-deep); }
+.mp-vivo .ledger td:last-child { white-space: nowrap; padding-left: 8px; }
+.mp-total { margin: 0; font-size: 30px; font-weight: 700; color: var(--brass); font-variant-numeric: tabular-nums; }
+.mp-total.flash { animation: mpFlash 1.2s ease-out; }
+@keyframes mpFlash { from { color: #8fd9a8; transform: scale(1.06); } }
+.live-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #8fd9a8; margin-right: 4px; vertical-align: 1px; animation: liveDot 2s ease-in-out infinite; }
+@keyframes liveDot { 50% { opacity: .3; } }
+@media (prefers-reduced-motion: reduce) { .mp-total.flash, .live-dot { animation: none; } }
 .conf.ok > b { color: #8fd9a8; } .conf.bad { border-color: var(--red); } .conf.bad > b { color: var(--them); }
 .pk-ranks { margin: 0; padding-left: 22px; display: grid; gap: 2px; font-size: 14px; }
 .wallet { display: grid; gap: 2px; padding: 12px 14px; border-radius: 12px; background: var(--felt-deep); border: 1px solid var(--line); }
@@ -555,7 +562,7 @@ body.in-game .games { display: none; }
 <script src="truco-engine.js?v=20261124b"></script>
 <script src="poker.js?v=20261124b"></script>
 <!-- ao mudar truco-engine.js, poker.js ou carteira.js, troque o ?v= para o navegador baixar de novo -->
-<script src="carteira.js?v=20261124b"></script>
+<script src="carteira.js?v=20261124c"></script>
 <script>
 /* =========================================================
    REGRAS — vêm do arquivo truco-engine.js (o mesmo que roda no servidor e nos testes)
