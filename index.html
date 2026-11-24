@@ -603,7 +603,7 @@ details.fold[open] { padding-bottom: 12px; }
 <script src="truco-engine.js?v=20261124b"></script>
 <script src="poker.js?v=20261124b"></script>
 <!-- ao mudar truco-engine.js, poker.js ou carteira.js, troque o ?v= para o navegador baixar de novo -->
-<script src="carteira.js?v=20261124e"></script>
+<script src="carteira.js?v=20261124f"></script>
 <script>
 /* =========================================================
    REGRAS — vêm do arquivo truco-engine.js (o mesmo que roda no servidor e nos testes)
@@ -944,7 +944,7 @@ async function init() {
   // link do aviso de saque no WhatsApp: abre o saguão com aquele saque em destaque no Banco
   if (h.startsWith('SAQUE-')) window.SAQUE_ALVO = location.hash.slice(7);
   // link de convite: guarda quem convidou e aplica quando a pessoa entrar
-  if (h.startsWith('CONVITE-')) { try { localStorage.setItem('truco:convite', decodeURIComponent(location.hash.slice(9)).toLowerCase()); } catch {} }
+  if (h.startsWith('CONVITE-')) { try { localStorage.setItem('truco:convite', decodeURIComponent(location.hash.slice(9)).toLowerCase()); } catch {} if (!account) loginMode = 'new'; }
   setTimeout(aplicarConvite, 1500);
   if (POKER_ATIVO && h.startsWith('POKER-') && typeof openPokerTable === 'function') { currentGame = 'poker'; paintGameNav(); openPokerTable(h.slice(6)); }
   else if (h && /^[A-Z0-9]{4,8}$/.test(h)) openTable(h); else showLobby();
@@ -1091,6 +1091,7 @@ function showLobby() {
           <label style="flex:2 1 200px">E-mail<input id="lgEmail" type="email" inputmode="email" autocomplete="username" autocapitalize="off" spellcheck="false" placeholder="voce@exemplo.com"></label>
           <label style="flex:1 1 140px">Senha<input id="lgPin" type="password" autocomplete="current-password" placeholder="6 ou mais caracteres"></label>
           <label style="flex:1 1 140px" id="lgPin2Wrap" hidden>Repita a senha<input id="lgPin2" type="password" autocomplete="new-password"></label>
+          <label style="flex:1 1 100%" id="lgConviteWrap" hidden>Quem te convidou? (usuário, opcional)<input id="lgConvite" maxlength="40" autocapitalize="off" autocomplete="off" spellcheck="false" placeholder="ex.: benttin" value="${esc(conviteGuardado() || '')}"></label>
           <p id="lgError" class="form-error" role="alert" hidden></p>
           <div class="row" style="flex:1 1 100%">
             <button class="primary" type="submit" id="lgEnter">Entrar</button>
@@ -1202,7 +1203,7 @@ function saveAccount() {
   try { account ? store.setItem('truco:conta', JSON.stringify(account)) : store.removeItem('truco:conta'); } catch {}
 }
 // Tela de login: "Já tenho conta" e "Criar conta nova" ficam separados, e o erro aparece fixo embaixo do formulário.
-let loginMode = 'in';
+let loginMode = (() => { try { return localStorage.getItem('truco:convite') ? 'new' : 'in'; } catch { return 'in'; } })(); // veio por convite: abre já em "Criar conta"
 function setLoginMode(mode) {
   loginMode = mode;
   const isNew = mode === 'new';
@@ -1213,6 +1214,7 @@ function setLoginMode(mode) {
     : 'Entre com seu e-mail e sua senha.';
   document.getElementById('lgPin2Wrap').hidden = !isNew;
   document.getElementById('lgNameWrap').hidden = !isNew;
+  document.getElementById('lgConviteWrap').hidden = !isNew;
   document.getElementById('lgReset').hidden = isNew;
   document.getElementById('lgPin').autocomplete = isNew ? 'new-password' : 'current-password';
   document.getElementById('lgEnter').textContent = isNew ? 'Criar conta' : 'Entrar';
@@ -1236,7 +1238,11 @@ async function login(create) {
   const btn = document.getElementById('lgEnter'); btn.disabled = true; btn.textContent = create ? 'Criando…' : 'Entrando…';
   const done = () => { btn.disabled = false; btn.textContent = create ? 'Criar conta' : 'Entrar'; };
   try {
+    // o código de convite digitado (ou que veio do link) vai junto com a conta nova
+    const conv = create ? (document.getElementById('lgConvite').value || '').trim().toLowerCase().replace(/^.*#convite-/, '') : '';
+    if (conv && userKey(conv) === key) return done(), loginError('O código de convite é de quem te convidou, não o seu.');
     const acc = create ? await authApi.create(key, name, email, pw) : await authApi.signIn(email, pw);
+    if (conv) { try { localStorage.setItem('truco:convite', conv); } catch {} }
     if (create) toast(`Conta ${acc.name} criada.`);
     account = { key: acc.key, name: acc.name };
     myId = acc.key; myNick = acc.name;
