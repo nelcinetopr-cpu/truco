@@ -29,6 +29,17 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/contas/$(key)).data.uid == request.auth.uid;
     }
 
+    // Quem está online: cada login marca só o próprio "estou aqui" (só a hora); todos veem a contagem.
+    match /online/{uid} {
+      allow read: if true;
+      allow create, update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['at'])
+        && request.resource.data.at is int
+        && request.resource.data.at > request.time.toMillis() - 600000
+        && request.resource.data.at < request.time.toMillis() + 600000;
+      allow delete: if signedIn() && request.auth.uid == uid;
+    }
+
     // Contas: o cadastro "usuario" é criado uma vez, junto com usuarios/{uid}, pelo próprio login.
     // O nome de usuário não pode ser tomado de outra pessoa nem trocado depois.
     match /contas/{key} {
