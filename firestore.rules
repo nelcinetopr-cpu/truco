@@ -33,11 +33,22 @@ service cloud.firestore {
     match /online/{uid} {
       allow read: if true;
       allow create, update: if signedIn() && request.auth.uid == uid
-        && request.resource.data.keys().hasOnly(['at'])
+        && request.resource.data.keys().hasOnly(['at', 'k'])
+        && (!('k' in request.resource.data) || request.resource.data.k == myKey())
         && request.resource.data.at is int
         && request.resource.data.at > request.time.toMillis() - 600000
         && request.resource.data.at < request.time.toMillis() + 600000;
       allow delete: if signedIn() && request.auth.uid == uid;
+    }
+
+    // Amigos e fila das mesas automáticas: cada um lê só o que é dele; só o servidor grava.
+    match /amizades/{id} {
+      allow read: if signedIn() && myKey() in resource.data.membros;
+      allow write: if false;
+    }
+    match /fila/{id} {
+      allow read: if signedIn() && myKey() in resource.data.membros;
+      allow write: if false;
     }
 
     // Contas: o cadastro "usuario" é criado uma vez, junto com usuarios/{uid}, pelo próprio login.

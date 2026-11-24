@@ -430,6 +430,15 @@ details summary { cursor: pointer; font-weight: 800; }
 details ul { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 4px; color: var(--muted); font-size: 14px; }
 #toast { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: #2a1a05; color: #f7e2b5; border: 1px solid var(--brass); padding: 10px 16px; border-radius: 10px; font-weight: 600; max-width: calc(100% - 32px); }
 /* música de fundo: botão redondo fixo no canto de baixo à esquerda */
+.jg-box { padding: 12px 14px; border-radius: 12px; background: var(--felt-deep); border: 1px solid var(--line); }
+.jg-box p { margin: 0 0 8px; }
+.jg-busca { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-weight: 600; }
+.jg-spin { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--line); border-top-color: var(--brass); animation: jgGira .9s linear infinite; flex: none; }
+@keyframes jgGira { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .jg-spin { animation: none; } }
+.am-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #5b6b64; margin-right: 6px; vertical-align: middle; }
+.am-dot.on { background: #3ddc84; }
+.amigos-lista { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
 .online-pill { position: fixed; z-index: 30; right: max(12px, env(safe-area-inset-right, 0px)); bottom: calc(12px + env(safe-area-inset-bottom, 0px)); display: flex; align-items: center; gap: 6px; padding: 6px 11px; border-radius: 999px; background: rgba(8, 30, 22, .92); border: 1px solid var(--line); color: var(--text); font-size: 12px; font-weight: 600; box-shadow: 0 4px 14px rgba(0,0,0,.35); pointer-events: none; }
 .online-pill .dot { width: 8px; height: 8px; border-radius: 50%; background: #3ddc84; box-shadow: 0 0 0 0 rgba(61,220,132,.6); animation: onlinePulse 2s infinite; }
 @keyframes onlinePulse { 0% { box-shadow: 0 0 0 0 rgba(61,220,132,.55); } 70% { box-shadow: 0 0 0 7px rgba(61,220,132,0); } 100% { box-shadow: 0 0 0 0 rgba(61,220,132,0); } }
@@ -626,6 +635,7 @@ details.fold[open] { padding-bottom: 12px; }
 <script src="poker.js?v=20261124b"></script>
 <!-- ao mudar truco-engine.js, poker.js ou carteira.js, troque o ?v= para o navegador baixar de novo -->
 <script src="carteira.js?v=20261124i"></script>
+<script src="social.js?v=20261124a"></script>
 <script>
 /* =========================================================
    REGRAS — vêm do arquivo truco-engine.js (o mesmo que roda no servidor e nos testes)
@@ -963,6 +973,7 @@ async function init() {
   }
   startPayments();
   if (!localMode) startOnline();
+  if (typeof startSocial === 'function') startSocial();
   const h = location.hash.replace('#', '').toUpperCase();
   // link do aviso de saque no WhatsApp: abre o saguão com aquele saque em destaque no Banco
   if (h.startsWith('SAQUE-')) window.SAQUE_ALVO = location.hash.slice(7);
@@ -980,11 +991,11 @@ const tableRef = c => db.doc('mesas/' + c);
    Cada pessoa logada marca "estou aqui" em online/{uid} a cada minuto. Conta como online
    quem marcou nos últimos 2,5 minutos. A contagem aparece para todo mundo, no canto. */
 const ONLINE_MS = 150 * 1000;
-const online = { t: null, unsub: null, sub: null, docs: [] };
+const online = { t: null, unsub: null, sub: null, docs: [], keys: new Set() };
 function onlineRef() { const u = fbAuth && fbAuth.currentUser; return u ? firebase.firestore().doc('online/' + u.uid) : null; }
 function onlineBeat() {
   const r = account && document.visibilityState !== 'hidden' && onlineRef();
-  if (r) r.set({ at: Date.now() }).catch(() => {});
+  if (r) r.set({ at: Date.now(), k: account.key }).catch(() => {});
 }
 function onlinePaint() {
   const el = document.getElementById('onlinePill'); if (!el) return;
@@ -996,7 +1007,10 @@ function onlinePaint() {
 function onlineWatch() {
   if (online.unsub) online.unsub();
   online.unsub = firebase.firestore().collection('online').where('at', '>', Date.now() - ONLINE_MS).onSnapshot(q => {
-    online.docs = q.docs.map(d => d.data().at || 0); onlinePaint();
+    online.docs = q.docs.map(d => d.data().at || 0);
+    online.keys = new Set(q.docs.filter(d => Date.now() - (d.data().at || 0) < ONLINE_MS).map(d => d.data().k).filter(Boolean));
+    onlinePaint();
+    if (typeof renderAmigos === 'function' && document.getElementById('amigosPanel')) renderAmigos();
   }, () => {});
 }
 function startOnline() {
@@ -1201,6 +1215,8 @@ function showLobby() {
   document.getElementById('podium').parentElement.insertAdjacentHTML('beforebegin', `<div class="grid2"><div class="stack"><section class="panel" id="walletPanel"></section><section class="panel" id="invitePanel" hidden></section></div><section class="panel" id="bankAdmin" hidden></section></div>`);
   document.getElementById('podium').parentElement.insertAdjacentHTML('beforebegin', `<div class="grid2"><section class="panel" id="tourPanel"></section><section class="panel" id="orgPanel"></section></div>`);
   document.getElementById('podium').parentElement.insertAdjacentHTML('afterend', `<section class="panel" id="profitPanel"></section>`);
+  document.getElementById('create').closest('.grid2').insertAdjacentHTML('beforebegin', `<div class="grid2"><section class="panel" id="jogarPanel"></section><section class="panel" id="amigosPanel"></section></div>`);
+  if (typeof renderJogar === 'function') { renderJogar(); renderAmigos(); }
   renderProfit(); renderPhotoPanel(); renderTourPanel(); renderOrgPanel();
   if (typeof loadCarteira === 'function') loadCarteira();
   startTourneyLobby();
@@ -1304,6 +1320,7 @@ async function login(create) {
     saveAccount();
     startPayments();
     onlineBeat();
+    if (typeof startSocial === 'function') startSocial();
     loginMode = 'in';
     showLobby();
     aplicarConvite();
@@ -1337,6 +1354,7 @@ async function resetPassword() {
 }
 function logout() {
   stopOnlineMe();
+  if (typeof stopSocial === 'function') stopSocial();
   authApi.signOut();
   account = null; myId = null; myNick = '';
   loginMode = 'in';
