@@ -631,7 +631,7 @@ function avisosHtml(v) {
       <div class="row"><button class="small primary" data-badm="tgconecta">1. Conectar meu Telegram</button><button class="small" data-badm="tgconfirma">2. Já toquei em Iniciar</button></div>
       <p class="muted" style="font-size:12px">O botão 1 abre o Telegram no bot: toque em <b>INICIAR</b> lá e volte aqui para o botão 2.</p>
       <div class="row"><button class="small" data-badm="tgtroca">Trocar o bot</button></div>`;
-  return `<p class="muted" style="font-size:13px">Os pedidos de saque chegam no Telegram de <b>${esc(v.nome || '')}</b> pelo bot <b>@${esc(v.bot)}</b>, com nome, CPF e valor, e um link para marcar como pago.</p>
+  return `<p class="muted" style="font-size:13px">Os pedidos de saque chegam no Telegram de <b>${esc(v.nome || '')}</b> pelo bot <b>@${esc(v.bot)}</b>, com nome, CPF e valor. Depois de pagar, <b>responda o aviso no Telegram com a foto do comprovante</b> e o saque é marcado como pago aqui sozinho.</p>
       <div class="row"><button class="small" data-badm="tgteste">Enviar teste</button><button class="small danger" data-badm="tgsai">Parar de receber</button></div>`;
 }
 function bindBankAdmin() {
