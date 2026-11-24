@@ -615,8 +615,7 @@ details.fold[open] { padding-bottom: 12px; }
   </header>
   <nav class="games" id="games" aria-label="Jogos">
     <button type="button" data-game="truco">Truco</button>
-    <button type="button" data-game="poker">Poker<small>em breve</small></button>
-    <button type="button" data-game="cacheta">Cacheta<small>em breve</small></button>
+    <!-- Poker e Cacheta: voltam quando estiverem prontos (o código do poker continua em poker.js) -->
   </nav>
   <div id="notice" class="notice" hidden></div>
   <main id="app"><p class="muted">Abrindo a mesa…</p></main>
@@ -911,7 +910,7 @@ const $app = document.getElementById('app');
    O poker fica no arquivo poker.js; a cacheta ainda não existe. */
 let currentGame = 'truco';
 const POKER_ATIVO = false; // poker desligado por enquanto (a carteira de fichas dele ainda é do navegador)
-try { const g = localStorage.getItem('jogo'); if (['truco', 'cacheta'].concat(POKER_ATIVO ? ['poker'] : []).includes(g)) currentGame = g; } catch {}
+try { const g = localStorage.getItem('jogo'); if (['truco'].concat(POKER_ATIVO ? ['poker'] : []).includes(g)) currentGame = g; } catch {} // só o truco por enquanto
 // Pix da organização: depósitos de fichas do poker e inscrições dos torneios do truco.
 // Vem de org-config.js (fora do repositório, veja org-config.example.js).
 const ORG_PIX = window.ORG_PIX || { nome: 'Organização', tipo: 'Chave aleatória', chave: '' };
