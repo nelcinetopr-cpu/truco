@@ -308,22 +308,8 @@ function renderBankAdmin() {
           ? `<div class="row"><input placeholder="CPF de quem pagou (do extrato)" data-depcpf="${esc(d.id)}" style="flex:1 1 160px"><button class="small primary" data-depok="${esc(d.id)}">Conferir</button></div>`
           : `<div class="row"><input placeholder="ID do Pix de devolução" data-devtx="${esc(d.id)}" style="flex:1 1 160px"><button class="small" data-devok="${esc(d.id)}">Devolvido</button><button class="small primary" data-depcred="${esc(d.id)}">Era dele: creditar</button></div>`}
       </div>`).join('') : '<p class="muted">Nada para conferir.</p>'}
-    <h3>Avisos no WhatsApp</h3>
-    ${a.aviso ? `<p class="muted" style="font-size:13px">Os pedidos de saque chegam no seu WhatsApp <b>${esc(a.aviso.telefone)}</b>, com nome, CPF e valor, e um link para marcar como pago.</p>
-      <div class="row"><button class="small" data-badm="zapteste">Enviar teste</button><button class="small danger" data-badm="zapsai">Parar de receber</button></div>`
-    : `<details><summary>Receber os pedidos de saque no meu WhatsApp</summary>
-      <ol class="muted" style="font-size:13px;padding-left:18px">
-        <li>Abra <a href="https://www.callmebot.com/blog/free-api-whatsapp-messages/" target="_blank" rel="noopener">callmebot.com</a> e salve nos contatos do seu celular o número do bot que aparece lá.</li>
-        <li>Mande para ele no WhatsApp: <b>I allow callmebot to send me messages</b></li>
-        <li>Ele responde com a sua chave (apikey). Cole abaixo, junto com o seu número.</li>
-      </ol>
-      <div class="row">
-        <label style="flex:1 1 160px">Seu WhatsApp<input id="zapTel" inputmode="tel" placeholder="55 41 99999-8888"></label>
-        <label style="flex:1 1 120px">Chave (apikey)<input id="zapKey" autocomplete="off" placeholder="123456"></label>
-      </div>
-      <div class="row"><button class="small primary" data-badm="zapsalva">Salvar e enviar teste</button></div>
-      <p class="muted" style="font-size:12px">O CallMeBot é um serviço gratuito de fora: o nome, o CPF e o valor de cada saque passam por ele para chegar no seu WhatsApp.</p>
-    </details>`}
+    <h3>Avisos no Telegram</h3>
+    ${avisosHtml(a.aviso || {})}
     <h3>Alertas (${a.alertas.length})</h3>
     ${a.alertas.length ? `<ul class="movs">${a.alertas.map(x => `<li><span>${esc(x.texto || x.tipo)}</span><button class="small" data-alerta="${esc(x.id)}">Visto</button><small class="muted">${quando(x.at)}</small></li>`).join('')}</ul>` : '<p class="muted">Nenhum alerta.</p>'}
     <h3>Extrato de um jogador</h3>
@@ -367,6 +353,24 @@ function renderBankAdmin() {
     window.SAQUE_ALVO = null;
   }
 }
+// pedidos de saque no Telegram: cadastrar o bot (uma vez) e conectar o Telegram de cada organizador
+function avisosHtml(v) {
+  if (!v.bot) return `<details><summary>Receber os pedidos de saque no Telegram</summary>
+      <ol class="muted" style="font-size:13px;padding-left:18px">
+        <li>Instale o Telegram e abra a conversa com <a href="https://t.me/BotFather" target="_blank" rel="noopener"><b>@BotFather</b></a>.</li>
+        <li>Mande <b>/newbot</b>, escolha um nome (ex.: Banco do Truco) e um usuário terminado em <b>bot</b> (ex.: bancodotruco_bot).</li>
+        <li>Ele responde com o <b>token</b> (parecido com 123456789:AAH…). Copie e cole aqui.</li>
+      </ol>
+      <div class="row"><label style="flex:1 1 220px">Token do bot<input id="tgToken" autocomplete="off" spellcheck="false" placeholder="123456789:AAH..."></label></div>
+      <div class="row"><button class="small primary" data-badm="tgbot">Salvar bot</button></div>
+    </details>`;
+  if (!v.conectado) return `<p class="muted" style="font-size:13px">Bot <b>@${esc(v.bot)}</b> cadastrado. Agora conecte o <b>seu</b> Telegram (cada organizador conecta o dele):</p>
+      <div class="row"><button class="small primary" data-badm="tgconecta">1. Conectar meu Telegram</button><button class="small" data-badm="tgconfirma">2. Já toquei em Iniciar</button></div>
+      <p class="muted" style="font-size:12px">O botão 1 abre o Telegram no bot: toque em <b>INICIAR</b> lá e volte aqui para o botão 2.</p>
+      <div class="row"><button class="small" data-badm="tgtroca">Trocar o bot</button></div>`;
+  return `<p class="muted" style="font-size:13px">Os pedidos de saque chegam no Telegram de <b>${esc(v.nome || '')}</b> pelo bot <b>@${esc(v.bot)}</b>, com nome, CPF e valor, e um link para marcar como pago.</p>
+      <div class="row"><button class="small" data-badm="tgteste">Enviar teste</button><button class="small danger" data-badm="tgsai">Parar de receber</button></div>`;
+}
 function bindBankAdmin() {
   const el = document.getElementById('bankAdmin');
   bindBankTabs(el);
@@ -397,21 +401,32 @@ function bindBankAdmin() {
         <ul class="movs">${out.lancamentos.map(l => `<li><span>${esc(TIPO_LANC[l.tipo] || l.tipo)} <span class="muted">${esc(l.moeda)}</span></span><b>${l.linhas.map(x => `${x.lado} ${esc(x.conta)} ${brl(x.valor)}`).join(' / ')}</b><small class="muted">${quando(l.at)}</small></li>`).join('') || '<li><span class="muted">Sem lançamentos.</span></li>'}</ul>`;
       return;
     }
-    if (a === 'zapsalva') {
-      const telefone = document.getElementById('zapTel').value, apikey = document.getElementById('zapKey').value.trim();
-      const ok = await callServer('adminAvisos', { telefone, apikey });
-      if (!ok) return;
-      const t = await callServer('adminAvisos', { teste: true });
-      toast(t && t.ok ? 'WhatsApp cadastrado. Confira a mensagem de teste.' : `Cadastrado, mas o teste não chegou${t && t.resposta ? ': ' + t.resposta : ''}. Confira o número e a chave.`, 7000);
-      return loadBankAdmin();
+    if (a === 'tgbot' || a === 'tgtroca') {
+      const token = a === 'tgtroca' ? prompt('Cole o token do novo bot (os organizadores vão precisar conectar de novo):') : document.getElementById('tgToken').value;
+      if (!token) return;
+      const out = await callServer('adminAvisos', { acao: 'bot', token: token.trim() });
+      if (out) { toast(`Bot @${out.bot} cadastrado. Agora conecte o seu Telegram.`, 6000); loadBankAdmin(); }
+      return;
     }
-    if (a === 'zapteste') {
-      const t = await callServer('adminAvisos', { teste: true });
-      return t && toast(t.ok ? 'Teste enviado. Confira seu WhatsApp.' : `O teste não chegou${t.resposta ? ': ' + t.resposta : ''}.`, 7000);
+    if (a === 'tgconecta') {
+      const w = window.open('', '_blank');
+      const out = await callServer('adminAvisos', { acao: 'conectar' });
+      if (!out) { if (w) w.close(); return; }
+      if (w) w.location.href = out.link; else location.href = out.link;
+      return toast('No Telegram, toque em INICIAR e depois volte aqui e toque em "Já toquei em Iniciar".', 8000);
     }
-    if (a === 'zapsai') {
-      if (!confirm('Parar de receber os pedidos de saque no WhatsApp?')) return;
-      return run('adminAvisos', { remover: true }, 'Você não vai mais receber os avisos.');
+    if (a === 'tgconfirma') {
+      const out = await callServer('adminAvisos', { acao: 'confirmar' });
+      if (out) { toast(`Telegram de ${out.nome} conectado. Chegou uma mensagem lá.`, 6000); loadBankAdmin(); }
+      return;
+    }
+    if (a === 'tgteste') {
+      const t = await callServer('adminAvisos', { acao: 'teste' });
+      return t && toast(t.ok ? 'Teste enviado. Confira o Telegram.' : `O teste não chegou${t.resposta ? ': ' + t.resposta : ''}.`, 7000);
+    }
+    if (a === 'tgsai') {
+      if (!confirm('Parar de receber os pedidos de saque no Telegram?')) return;
+      return run('adminAvisos', { acao: 'sair' }, 'Você não vai mais receber os avisos.');
     }
     if (a === 'caixa') {
       const v = reaisParaCentavos(document.getElementById('cxValor').value), tipo = document.getElementById('cxTipo').value;
