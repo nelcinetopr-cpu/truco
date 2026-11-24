@@ -541,6 +541,22 @@ details.fold[open] { padding-bottom: 12px; }
 .wallet-body { display: grid; gap: 10px; }
 .wallet-body h3, #invitePanel h3, .sheet h3 { margin: 6px 0 0; }
 .seg.mini button { padding: 6px 4px; font-size: 12px; }
+.usr-tot { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 12px 0 8px; }
+@media (min-width: 600px) { .usr-tot { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.usr-tot > div { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: 12px; background: var(--felt-deep); border: 1px solid var(--line); min-width: 0; }
+.usr-tot b { font-size: 17px; }
+.usr-tot small { font-size: 11px; }
+#usrLista { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.usr { border: 1px solid var(--line); border-radius: 12px; background: var(--felt-deep); }
+.usr > summary { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 12px; cursor: pointer; list-style: none; }
+.usr > summary::-webkit-details-marker { display: none; }
+.usr[open] > summary { border-bottom: 1px solid var(--line); }
+.usr-nome, .usr-num { display: flex; flex-direction: column; min-width: 0; }
+.usr-nome b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.usr-nome small, .usr-num small { font-size: 11px; }
+.usr-num { align-items: flex-end; font-size: 13px; white-space: nowrap; }
+.usr-det { padding: 4px 12px 10px; }
+.usr-det h4 { margin: 10px 0 2px; font-size: 13px; }
 .ext-total { margin: 0; font-size: 13px; color: var(--muted); }
 .dep-form { display: grid; gap: 10px; }
 .dep-form label { display: grid; gap: 4px; }
@@ -603,7 +619,7 @@ details.fold[open] { padding-bottom: 12px; }
 <script src="truco-engine.js?v=20261124b"></script>
 <script src="poker.js?v=20261124b"></script>
 <!-- ao mudar truco-engine.js, poker.js ou carteira.js, troque o ?v= para o navegador baixar de novo -->
-<script src="carteira.js?v=20261124f"></script>
+<script src="carteira.js?v=20261124g"></script>
 <script>
 /* =========================================================
    REGRAS — vêm do arquivo truco-engine.js (o mesmo que roda no servidor e nos testes)

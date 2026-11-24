@@ -402,17 +402,79 @@ function renderMpVivo() {
     <small class="muted">${mpVivo.at ? `Último movimento ${quando(mpVivo.at)}. ` : ''}Calculado pelo livro-caixa do site. Se o app do Mercado Pago mostrar <b>menos</b> que isso, avise.</small>`;
 }
 // abas do painel: Banco (o dia a dia) e Lucros (o que a casa ganhou)
-const bankTabs = () => `<div class="seg two" role="tablist" aria-label="Banco">${[['banco', 'Banco'], ['lucros', 'Lucros']].map(([k, t]) => `<button type="button" role="tab" aria-selected="${(cart.bankTab || 'banco') === k}" data-btab="${k}">${t}</button>`).join('')}</div>`;
+const bankTabs = () => `<div class="seg" role="tablist" aria-label="Banco">${[['banco', 'Banco'], ['usuarios', 'Usuários'], ['lucros', 'Lucros']].map(([k, t]) => `<button type="button" role="tab" aria-selected="${(cart.bankTab || 'banco') === k}" data-btab="${k}">${t}</button>`).join('')}</div>`;
 function bindBankTabs(el) {
   el.querySelectorAll('[data-btab]').forEach(b => (b.onclick = () => {
     cart.bankTab = b.dataset.btab;
-    if (cart.bankTab === 'lucros') loadLucros(); else renderBankAdmin();
+    if (cart.bankTab === 'lucros') loadLucros(); else if (cart.bankTab === 'usuarios') loadUsuarios(); else renderBankAdmin();
   }));
 }
 async function loadLucros() {
   cart.lucros = null; renderBankAdmin();
   cart.lucros = await callServer('adminLucros', {}, { quiet: true });
   renderBankAdmin();
+}
+// aba Usuários: todos os cadastrados, com o que cada um depositou, sacou e tem de saldo
+async function loadUsuarios() {
+  cart.usuarios = null; renderBankAdmin();
+  cart.usuarios = await callServer('adminUsuarios', {}, { quiet: true });
+  renderBankAdmin();
+}
+const dataCurta = t => (t ? new Date(t).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—');
+const dataHora = t => (t ? new Date(t).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—');
+const ORDEM_USR = { novos: (a, b) => (b.criadoEm || 0) - (a.criadoEm || 0), dep: (a, b) => b.dep.total - a.dep.total, saq: (a, b) => b.saq.total - a.saq.total, saldo: (a, b) => b.saldo - a.saldo, nome: (a, b) => a.name.localeCompare(b.name, 'pt-BR') };
+function usuarioHtml(u) {
+  const cor = st => (['creditado', 'pago'].includes(st) ? 'pos' : ['devolver', 'recusado'].includes(st) ? 'neg' : 'muted');
+  const mov = (lista, saq) => lista.length
+    ? `<ul class="movs">${lista.map(x => `<li><span>${brl(saq ? x.liquido : x.valor)}</span><b class="${cor(x.status)}">${esc((saq ? STATUS_SAQ : STATUS_DEP)[x.status] || x.status)}</b><small class="muted">${dataHora(x.criadoEm)}</small></li>`).join('')}</ul>`
+    : `<p class="muted" style="margin:4px 0">${saq ? 'Nenhum saque.' : 'Nenhum depósito.'}</p>`;
+  return `<details class="usr" data-usr="${esc(u.key)}"${cart.usrAberto === u.key ? ' open' : ''}>
+    <summary>
+      <span class="usr-nome"><b>${esc(u.name)}</b><small class="muted">@${esc(u.key)} · desde ${dataCurta(u.criadoEm)}${u.cpf ? '' : ' · <span class="neg">sem CPF</span>'}</small></span>
+      <span class="usr-num"><span class="pos">+${brl(u.dep.total)}</span><span class="neg">−${brl(u.saq.total)}</span><small class="muted">saldo ${brl(u.saldo)}</small></span>
+    </summary>
+    <div class="usr-det">
+      <p class="muted" style="font-size:13px;margin:4px 0">CPF ${esc(u.cpf || 'não cadastrado')} · jogou ${brl(u.apostado)} em mesas${u.por ? ` · convidado por <b>@${esc(u.por)}</b>` : ''}${u.dep.pendente ? ` · <span class="neg">${brl(u.dep.pendente)} em depósito pendente</span>` : ''}${u.saq.pendente ? ` · <span class="neg">${brl(u.saq.pendente)} de saque a pagar</span>` : ''}</p>
+      <h4>Depósitos · ${u.dep.qtd} creditado${u.dep.qtd === 1 ? '' : 's'}, ${brl(u.dep.total)}</h4>${mov(u.depositos, false)}
+      <h4>Saques · ${u.saq.qtd} pago${u.saq.qtd === 1 ? '' : 's'}, ${brl(u.saq.total)}</h4>${mov(u.saques, true)}
+    </div>
+  </details>`;
+}
+function listaUsuarios() {
+  const box = document.getElementById('usrLista'); if (!box || !cart.usuarios) return;
+  const q = (cart.usrBusca || '').trim().toLowerCase(), qn = q.replace(/\D/g, '');
+  const lista = cart.usuarios.usuarios.filter(u => !q || u.name.toLowerCase().includes(q) || u.key.includes(q) || (qn.length >= 3 && (u.cpf || '').replace(/\D/g, '').includes(qn)))
+    .sort(ORDEM_USR[cart.usrOrdem || 'novos']);
+  box.innerHTML = lista.length ? lista.map(usuarioHtml).join('') : '<p class="muted">Ninguém encontrado.</p>';
+  box.querySelectorAll('details.usr').forEach(d => (d.ontoggle = () => {
+    if (d.open) { cart.usrAberto = d.dataset.usr; box.querySelectorAll('details.usr[open]').forEach(o => { if (o !== d) o.open = false; }); }
+    else if (cart.usrAberto === d.dataset.usr) cart.usrAberto = null;
+  }));
+}
+function renderUsuarios(el) {
+  const U = cart.usuarios;
+  if (!U) { el.innerHTML = `<h2>Banco (organização)</h2>${bankTabs()}<p class="muted">Carregando…</p>`; bindBankTabs(el); return; }
+  const us = U.usuarios, soma = f => us.reduce((t, u) => t + f(u), 0);
+  const comCpf = us.filter(u => u.cpf).length, depositaram = us.filter(u => u.dep.qtd).length, aPagar = soma(u => u.saq.pendente);
+  el.innerHTML = `<h2>Banco (organização)</h2>${bankTabs()}
+    <div class="usr-tot">
+      <div><small class="muted">Usuários</small><b>${us.length}</b><small class="muted">${comCpf} com CPF · ${depositaram} já depositaram</small></div>
+      <div><small class="muted">Depositado</small><b class="pos">${brl(soma(u => u.dep.total))}</b></div>
+      <div><small class="muted">Sacado</small><b class="neg">${brl(soma(u => u.saq.total))}</b>${aPagar ? `<small class="muted">+ ${brl(aPagar)} a pagar</small>` : ''}</div>
+      <div><small class="muted">Saldos</small><b>${brl(soma(u => u.saldo))}</b></div>
+    </div>
+    ${U.moeda === 'FICHA' ? '<p class="muted" style="font-size:12px;margin:0">Modo fichas (teste): os valores são fictícios.</p>' : ''}
+    <div class="row">
+      <input id="usrBusca" type="search" placeholder="Buscar nome, usuário ou CPF" value="${esc(cart.usrBusca || '')}" autocapitalize="off" style="flex:2 1 180px">
+      <select id="usrOrdem" style="flex:1 1 130px" aria-label="Ordenar">${[['novos', 'Mais novos'], ['dep', 'Mais depositou'], ['saq', 'Mais sacou'], ['saldo', 'Maior saldo'], ['nome', 'Nome (A–Z)']].map(([k, t]) => `<option value="${k}"${(cart.usrOrdem || 'novos') === k ? ' selected' : ''}>${t}</option>`).join('')}</select>
+      <button class="small" data-usratualiza>Atualizar</button>
+    </div>
+    <div id="usrLista"></div>`;
+  bindBankTabs(el);
+  listaUsuarios();
+  document.getElementById('usrBusca').oninput = e => { cart.usrBusca = e.target.value; listaUsuarios(); };
+  document.getElementById('usrOrdem').onchange = e => { cart.usrOrdem = e.target.value; listaUsuarios(); };
+  el.querySelector('[data-usratualiza]').onclick = loadUsuarios;
 }
 const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 const nomeMes = m => `${MESES[+m.slice(5, 7) - 1]}/${m.slice(0, 4)}`;
@@ -458,6 +520,7 @@ function renderLucros(el) {
 function renderBankAdmin() {
   const el = document.getElementById('bankAdmin'); if (!el || el.hidden) return;
   if (cart.bankTab === 'lucros') return renderLucros(el);
+  if (cart.bankTab === 'usuarios') return renderUsuarios(el);
   const a = cart.admin;
   if (!a) { el.innerHTML = '<h2>Banco (organização)</h2><p class="muted">Carregando…</p>'; return; }
   const c = a.conferencia, cfg = a.config, teste = cfg.moeda === 'FICHA';
