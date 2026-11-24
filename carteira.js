@@ -170,7 +170,7 @@ function depositoHtml(r) {
     return `<div class="pixbox">
       <p><b>Pague ${brl(d.valor)} pelo Pix</b> — o saldo entra sozinho assim que o banco confirmar.</p>
       ${d.qrBase64 ? `<img class="pixqr" alt="QR Code do Pix" src="data:image/png;base64,${esc(d.qrBase64)}">` : ''}
-      ${d.qr ? `<div class="pix-key"><span class="key-text pixcode">${esc(d.qr)}</span><button type="button" class="small primary" data-copy="${esc(d.qr)}">Copiar Pix</button></div>` : ''}
+      ${d.qr ? `<div class="pix-key"><span class="key-text pixcode">${esc(d.qr)}</span><button type="button" class="small primary" data-copy="${esc(d.qr)}" data-copied="Código Pix copiado.">Copiar Pix</button></div>` : ''}
       <p class="muted" style="font-size:13px">Pague <b>com uma conta no seu CPF</b>: Pix de outro CPF não entra no saldo e é devolvido. ${d.expiraEm ? `Vale até ${quando(d.expiraEm)}.` : ''}</p>
       <p class="muted" id="depStatus">Esperando o pagamento…</p>
       <div class="row"><button class="small" data-depcheck>Já paguei, conferir</button><button class="small" data-depnew>Novo depósito</button></div>
@@ -211,7 +211,7 @@ function convidarHtml(r) {
   if (ind.ativa === false) return '<p class="muted">O programa de indicação está pausado no momento.</p>';
   return `<div class="convite-hero"><b>Ganhe ${brl(ind.valor)}</b><span>por amigo que fizer o primeiro depósito. Ele ganha <b>${ind.pct}%</b> do depósito de bônus.</span></div>
     <div class="pix-key"><span class="key-text">${esc(link)}</span></div>
-    <div class="row"><button type="button" class="small primary" data-copy="${esc(link)}">Copiar link</button>${navigator.share ? `<button type="button" class="small" data-share="${esc(link)}">Enviar pelo WhatsApp…</button>` : ''}</div>
+    <div class="row"><button type="button" class="small primary" data-copy="${esc(link)}" data-copied="Link copiado.">Copiar link</button>${navigator.share ? `<button type="button" class="small" data-share="${esc(link)}">Enviar pelo WhatsApp…</button>` : ''}</div>
     <p class="muted" style="font-size:12px;margin:0">Seu código: <b>${esc(c.codigo || '')}</b>. Os bônus valem nas mesas na hora e podem ser sacados depois de jogar ${x}x o valor deles em entradas.</p>
     ${bonusLista.length ? `<h3>Seus bônus</h3><ul class="movs">${bonusLista.map(b => `<li><span>${esc(b.texto || 'Bônus')} · ${brl(b.valor)}</span><b class="${b.liberado ? 'pos' : 'muted'}">${b.liberado ? 'liberado para saque' : `jogou ${brl(b.jogou)} de ${brl(b.meta)}`}</b><small class="muted">${b.liberado ? '' : `falta ${brl(b.meta - b.jogou)}`}</small></li>`).join('')}</ul>` : ''}
     <h3>Quem você convidou</h3>
@@ -462,6 +462,9 @@ function renderBankAdmin() {
   if (!a) { el.innerHTML = '<h2>Banco (organização)</h2><p class="muted">Carregando…</p>'; return; }
   const c = a.conferencia, cfg = a.config, teste = cfg.moeda === 'FICHA';
   const dono = isOrg(); // dono e organizadores mexem nas configurações
+  // seções fechadas até o dono abrir; lembra quais estavam abertas quando o painel se redesenha
+  const folds = (cart.folds ||= new Set()), aberto = k => (folds.has(k) ? ' open' : '');
+  const qtd = n => `<span class="fold-n${n ? ' tem' : ''}">${n}</span>`;
   el.innerHTML = `<h2>Banco (organização)</h2>${bankTabs()}
     <div class="conf mp-vivo"><div id="mpVivo"></div>
       ${dono ? `<div class="row" style="align-items:flex-end">
@@ -475,27 +478,32 @@ function renderBankAdmin() {
       <small class="muted">${teste ? 'Modo de teste (saldo fictício).' : 'Reais (Mercado Pago).'} Conferido ${quando(c.at)}.</small>
       <div class="row"><button class="small" data-badm="conf">Conferir agora</button></div>
     </div>
-    <h3>Saques para pagar (${a.saques.length})</h3>
+    <details class="fold" data-fold="saques"${aberto('saques')}><summary>Saques para pagar ${qtd(a.saques.length)}</summary>
     ${a.saques.length ? a.saques.map(s => `<div class="pay-row owe">
         <div><b>${esc(s.name || s.key)}</b> pediu ${brl(s.valor)} → pagar <b>${brl(s.liquido)}</b><div class="muted" style="font-size:12px">${quando(s.criadoEm)}${s.tarifa ? ` · tarifa ${brl(s.tarifa)}` : ''}</div></div>
         <dl class="pix"><dt>Chave</dt><dd class="pix-key"><span class="key-text">CPF ${esc(s.cpf)}</span><button type="button" class="small primary" data-copy="${esc(s.cpf)}">Copiar</button></dd></dl>
         <div class="row"><input placeholder="ID da transação do Pix" data-txid="${esc(s.id)}" style="flex:1 1 160px"><button class="small primary" data-saqpago="${esc(s.id)}">Paguei</button><button class="small danger" data-saqrecusa="${esc(s.id)}">Recusar</button></div>
       </div>`).join('') : '<p class="muted">Nenhum saque esperando.</p>'}
-    <h3>Depósitos para conferir</h3>
+    </details>
+    <details class="fold" data-fold="depositos"${aberto('depositos')}><summary>Depósitos para conferir ${qtd(a.depositos.length)}</summary>
     ${a.depositos.length ? a.depositos.map(d => `<div class="pay-row">
         <div><b>${esc(d.name || d.key)}</b> ${brl(d.valorPago || d.valor)} · ${esc(STATUS_DEP[d.status] || d.status)}<div class="muted" style="font-size:12px">${quando(d.criadoEm)}${d.nomePagador ? ` · pagou: ${esc(d.nomePagador)}` : ''}${d.cpfPagador ? ` · CPF de quem pagou: ${esc(d.cpfPagador)}` : ''}</div></div>
         ${d.status === 'conferir'
           ? `<div class="row"><input placeholder="CPF de quem pagou (do extrato)" data-depcpf="${esc(d.id)}" style="flex:1 1 160px"><button class="small primary" data-depok="${esc(d.id)}">Conferir</button></div>`
           : `<div class="row"><input placeholder="ID do Pix de devolução" data-devtx="${esc(d.id)}" style="flex:1 1 160px"><button class="small" data-devok="${esc(d.id)}">Devolvido</button><button class="small primary" data-depcred="${esc(d.id)}">Era dele: creditar</button></div>`}
       </div>`).join('') : '<p class="muted">Nada para conferir.</p>'}
-    <h3>Avisos no Telegram</h3>
+    </details>
+    <details class="fold" data-fold="avisos"${aberto('avisos')}><summary>Avisos no Telegram</summary>
     ${avisosHtml(a.aviso || {})}
-    <h3>Alertas (${a.alertas.length})</h3>
+    </details>
+    <details class="fold" data-fold="alertas"${aberto('alertas')}><summary>Alertas ${qtd(a.alertas.length)}</summary>
     ${a.alertas.length ? `<ul class="movs">${a.alertas.map(x => `<li><span>${esc(x.texto || x.tipo)}</span><button class="small" data-alerta="${esc(x.id)}">Visto</button><small class="muted">${quando(x.at)}</small></li>`).join('')}</ul>` : '<p class="muted">Nenhum alerta.</p>'}
-    <h3>Extrato de um jogador</h3>
+    </details>
+    <details class="fold" data-fold="extrato"${aberto('extrato')}><summary>Extrato de um jogador</summary>
     <div class="row"><input id="admExtUser" placeholder="Usuário" style="flex:1 1 140px"><button class="small" data-badm="ext">Ver</button></div>
     <div id="admExt"></div>
-    ${dono ? `<details><summary>Caixa da casa e dar saldo (organização)</summary>
+    </details>
+    ${dono ? `<details class="fold" data-fold="caixa"${aberto('caixa')}><summary>Caixa da casa e dar saldo</summary>
       <p class="muted" style="font-size:13px">O <b>caixa da casa</b> é o seu dinheiro deixado no Mercado Pago para garantir os saques. Hoje: <b>${brl(c.capital || 0)}</b>. Para dar saldo a alguém (inclusive a você), o valor sai do caixa da casa.</p>
       <div class="row">
         <label style="flex:1 1 150px">Movimento<select id="cxTipo"><option value="entrada">Coloquei dinheiro no Mercado Pago</option><option value="retirada">Tirei dinheiro do Mercado Pago</option><option value="rendimento">Rendimento que o Mercado Pago creditou</option></select></label>
@@ -510,7 +518,15 @@ function renderBankAdmin() {
       </div>
       <div class="row"><button class="small primary" data-badm="creditar">Dar saldo</button></div>
     </details>` : ''}
-    ${dono ? `<details><summary>Configuração (organização)</summary>
+    ${dono ? `<details class="fold" data-fold="convite"${aberto('convite')}><summary>Ligar convite</summary>
+      <p class="muted" style="font-size:13px">Quando alguém entrou pelo convite mas não apareceu na lista de quem convidou. Só vale antes do primeiro depósito do convidado; o bônus entra quando ele depositar.</p>
+      <div class="row">
+        <label style="flex:1 1 140px">Convidado (usuário)<input id="liConvidado" autocapitalize="off" placeholder="ex.: borg3ss"></label>
+        <label style="flex:1 1 140px">Quem convidou (usuário)<input id="liPor" autocapitalize="off" placeholder="ex.: benttin"></label>
+      </div>
+      <div class="row"><button class="small primary" data-badm="ligarconvite">Ligar convite</button></div>
+    </details>` : ''}
+    ${dono ? `<details class="fold" data-fold="config"${aberto('config')}><summary>Configuração</summary>
       <div class="row">
         <label style="flex:1 1 140px">Modo<select id="cfgMoeda"><option value="FICHA" ${teste ? 'selected' : ''}>Fichas (teste, saldo fictício)</option><option value="BRL" ${teste ? '' : 'selected'}>Reais (Mercado Pago)</option></select></label>
         ${[['depositoMinimo', 'Depósito mínimo'], ['saqueMinimo', 'Saque mínimo'], ['tarifaSaque', 'Tarifa de saque'], ['limiteDiarioDeposito', 'Limite diário de depósito'], ['limiteDiarioSaque', 'Limite diário de saque']].map(([k, t]) => `<label style="flex:1 1 140px">${t} (R$)<input data-cfg="${k}" inputmode="decimal" value="${((cfg[k] || 0) / 100).toFixed(2).replace('.', ',')}"></label>`).join('')}
@@ -526,12 +542,13 @@ function renderBankAdmin() {
     </details>` : ''}`;
   bindBankAdmin();
   renderMpVivo();
+  el.querySelectorAll('details[data-fold]').forEach(d => (d.ontoggle = () => (d.open ? folds.add(d.dataset.fold) : folds.delete(d.dataset.fold))));
   const mpBtn = el.querySelector('[data-mpapp]');
   if (mpBtn) mpBtn.onclick = acertarRendimento;
   // veio pelo link do WhatsApp: mostra o saque e já deixa o campo do ID do Pix pronto
   if (window.SAQUE_ALVO) {
     const alvo = el.querySelector(`[data-txid="${CSS.escape(window.SAQUE_ALVO)}"]`);
-    if (alvo) { alvo.closest('.pay-row')?.classList.add('destaque'); alvo.scrollIntoView({ block: 'center', behavior: 'smooth' }); setTimeout(() => alvo.focus(), 400); }
+    if (alvo) { const f = alvo.closest('details'); if (f) { f.open = true; folds.add(f.dataset.fold); } alvo.closest('.pay-row')?.classList.add('destaque'); alvo.scrollIntoView({ block: 'center', behavior: 'smooth' }); setTimeout(() => alvo.focus(), 400); }
     else toast('Esse saque já foi resolvido ou não está mais esperando.', 6000);
     window.SAQUE_ALVO = null;
   }
@@ -617,6 +634,13 @@ function bindBankAdmin() {
       const txt = { entrada: 'entrou no Mercado Pago', retirada: 'saiu do Mercado Pago', receita: 'vai da receita para o caixa', rendimento: 'de rendimento entrou no Mercado Pago' }[tipo];
       if (!confirm(`Confirma: ${brl(v)} ${txt}?`)) return;
       return run('adminCaixa', { tipo, valor: v, motivo: document.getElementById('cxMotivo').value.trim() }, 'Caixa atualizado.');
+    }
+    if (a === 'ligarconvite') {
+      const convidado = document.getElementById('liConvidado').value.trim(), por = document.getElementById('liPor').value.trim();
+      if (!convidado || !por) return toast('Escreva os dois usuários.');
+      const out = await callServer('adminIndicacao', { convidado, por });
+      if (out) toast(`Pronto: ${convidado} agora aparece como convidado de ${out.nomePor}.`, 6000);
+      return;
     }
     if (a === 'creditar') {
       const v = reaisParaCentavos(document.getElementById('crValor').value), key = document.getElementById('crUser').value.trim();

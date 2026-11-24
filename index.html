@@ -511,6 +511,14 @@ body.in-game .games { display: none; }
 .pixqr { width: min(220px, 70vw); aspect-ratio: 1; background: #fff; border-radius: 10px; padding: 8px; }
 .pixcode { font-size: 12px; max-width: 100%; overflow-wrap: anywhere; }
 .conf { display: grid; gap: 6px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--felt-deep); }
+details.fold { border-top: 1px solid var(--line); }
+details.fold > summary { list-style: none; display: flex; align-items: center; gap: 8px; padding: 12px 0; font-size: 12px; text-transform: uppercase; letter-spacing: 1.4px; color: var(--muted); }
+details.fold > summary::-webkit-details-marker { display: none; }
+details.fold > summary::after { content: '▸'; margin-left: auto; font-size: 14px; transition: transform .15s; }
+details.fold[open] > summary::after { transform: rotate(90deg); }
+details.fold[open] { padding-bottom: 12px; }
+.fold-n { min-width: 20px; padding: 1px 6px; border-radius: 10px; background: var(--line); color: var(--muted); font-size: 11px; letter-spacing: 0; text-align: center; }
+.fold-n.tem { background: var(--brass); color: #1b1408; }
 .mp-vivo .ledger td:last-child { white-space: nowrap; padding-left: 8px; }
 .mp-total { margin: 0; font-size: 30px; font-weight: 700; color: var(--brass); font-variant-numeric: tabular-nums; }
 .mp-total.flash { animation: mpFlash 1.2s ease-out; }
@@ -595,7 +603,7 @@ body.in-game .games { display: none; }
 <script src="truco-engine.js?v=20261124b"></script>
 <script src="poker.js?v=20261124b"></script>
 <!-- ao mudar truco-engine.js, poker.js ou carteira.js, troque o ?v= para o navegador baixar de novo -->
-<script src="carteira.js?v=20261124d"></script>
+<script src="carteira.js?v=20261124e"></script>
 <script>
 /* =========================================================
    REGRAS — vêm do arquivo truco-engine.js (o mesmo que roda no servidor e nos testes)
@@ -1249,7 +1257,7 @@ async function aplicarConvite() {
   try { c = localStorage.getItem('truco:convite'); } catch {}
   if (!c || !account || !fns || conviteAplicando) return;
   conviteAplicando = true;
-  const out = await callServer('carteiraIndicacao', { codigo: c }, { quiet: true });
+  const out = await callServer('carteiraIndicacao', { codigo: c }); // se der erro, a pessoa vê o motivo
   try { localStorage.removeItem('truco:convite'); } catch {}
   conviteAplicando = false;
   if (out) { toast(`Você entrou pelo convite de ${out.nomePor}. Ganha ${'bônus'} no primeiro depósito!`, 7000); if (typeof loadCarteira === 'function') loadCarteira(); }
@@ -1315,9 +1323,9 @@ document.addEventListener('click', e => {
   const fallback = () => {
     const span = b.parentElement.querySelector('.key-text');
     if (span) { const r = document.createRange(); r.selectNodeContents(span); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); }
-    toast('Chave selecionada. Use Ctrl+C (ou segure e copie no celular).');
+    toast('Selecionado. Use Ctrl+C (ou segure e copie no celular).');
   };
-  try { navigator.clipboard.writeText(text).then(() => toast('Chave Pix copiada.'), fallback); } catch { fallback(); }
+  try { navigator.clipboard.writeText(text).then(() => toast(b.dataset.copied || 'Chave Pix copiada.'), fallback); } catch { fallback(); }
 });
 
 function renderPixPanel() {
