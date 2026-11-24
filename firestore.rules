@@ -1,0 +1,248 @@
+rules_version = '2';
+
+// Regras de segurança do TRUCO.
+// Cole este arquivo inteiro em Firestore Database > Regras e clique em Publicar.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // nome de usuário de quem está logado (usuarios/{uid} -> usuario)
+    function myKey() {
+      return get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.key;
+    }
+
+    // dono e organizadores dos torneios (documento config/org)
+    function isOrg() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/config/org)
+        && (get(/databases/$(database)/documents/config/org).data.owner == myKey()
+            || myKey() in get(/databases/$(database)/documents/config/org).data.orgs);
+    }
+
+    // a conta "usuario" pertence a este login
+    function owns(key) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/contas/$(key))
+        && get(/databases/$(database)/documents/contas/$(key)).data.uid == request.auth.uid;
+    }
+
+    // Contas: o cadastro "usuario" é criado uma vez, junto com usuarios/{uid}, pelo próprio login.
+    // O nome de usuário não pode ser tomado de outra pessoa nem trocado depois.
+    match /contas/{key} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && key.matches('^[a-z0-9_-]{3,16}$')
+        && request.resource.data.keys().hasOnly(['name', 'uid', 'createdAt'])
+        && request.resource.data.uid == request.auth.uid
+        && getAfter(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.key == key;
+      allow update, delete: if false;
+    }
+    match /usuarios/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow create: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['key'])
+        && getAfter(/databases/$(database)/documents/contas/$(request.resource.data.key)).data.uid == uid;
+      allow update, delete: if false;
+    }
+
+    // Chave Pix e foto: todo mundo logado vê, só o dono troca.
+    match /pix/{key} {
+      allow read: if signedIn();
+      allow write: if owns(key);
+    }
+    match /fotos/{key} {
+      allow read: if signedIn();
+      allow write: if owns(key);
+    }
+
+    // Mesas do truco: quem decide a partida é o servidor (Cloud Functions).
+    // O jogador só lê a mesa e só pode avisar que está com ela aberta (aliveAt).
+    // A mão de cada um fica em maos/{usuario}, que só o dono lê.
+    // O estado completo (com todas as cartas) fica em privado/, que ninguém lê.
+    match /mesas/{code} {
+      allow read: if signedIn();
+      allow update: if signedIn()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['aliveAt']);
+      allow create, delete: if false;
+      match /maos/{key} {
+        allow read: if signedIn() && myKey() == key;
+        allow write: if false;
+      }
+      match /privado/{doc} {
+        allow read, write: if false;
+      }
+      match /locks/{lock} {
+        allow read, write: if false;
+      }
+    }
+
+    // Partidas do ranking: as do truco são gravadas pelo servidor; o cliente só
+    // registra o resultado do poker (pk-...). Nunca são alteradas.
+    match /partidas/{id} {
+      allow read: if signedIn();
+      allow create: if signedIn() && id.matches('pk-.*');
+      allow update, delete: if false;
+    }
+
+    // Conversa da mesa (texto): só existe durante a partida e é apagada no fim.
+    // Cada um só manda mensagem no próprio nome.
+    match /chat/{id} {
+      allow read: if signedIn();
+      allow create: if owns(request.resource.data.from);
+      allow delete: if signedIn();
+      allow update: if false;
+    }
+
+    // Voz ao vivo: aqui fica só o "aperto de mão" da ligação entre os aparelhos (o som não passa pelo banco).
+    match /voz/{id} {
+      allow read: if signedIn();
+      allow create, update: if owns(request.resource.data.from);
+      allow delete: if signedIn();
+    }
+
+    // Organização: o primeiro a assumir vira dono; só o dono muda a lista de organizadores.
+    match /config/{doc} {
+      allow read: if signedIn();
+      allow create: if signedIn() && doc == 'org' && request.resource.data.owner == myKey();
+      allow update: if signedIn() && doc == 'org' && resource.data.owner == myKey() && request.resource.data.owner == myKey();
+      allow delete: if false;
+    }
+
+    // Torneio valendo saldo da carteira (campo "carteira" no documento): só o servidor mexe
+    // no torneio, na chave e nas inscrições, porque envolvem dinheiro.
+    function tourCarteira(tid) {
+      return exists(/databases/$(database)/documents/torneios/$(tid))
+        && get(/databases/$(database)/documents/torneios/$(tid)).data.get('carteira', false) == true;
+    }
+
+    // Torneios (modo antigo, com comprovante): só a organização cria, muda ou exclui.
+    match /torneios/{id} {
+      allow read: if signedIn();
+      allow create: if isOrg() && request.resource.data.get('carteira', false) != true;
+      allow update: if isOrg() && resource.data.get('carteira', false) != true && request.resource.data.get('carteira', false) != true;
+      allow delete: if isOrg() && resource.data.get('carteira', false) != true;
+    }
+
+    // Chave do torneio: a organização sorteia; o placar dos confrontos é o servidor que anota.
+    match /chaves/{id} {
+      allow read: if signedIn();
+      allow create, update, delete: if isOrg() && !tourCarteira(id);
+    }
+
+    // Inscrição da dupla: quem inscreve, o parceiro convidado e a organização mexem.
+    match /inscricoes/{id} {
+      allow read: if signedIn();
+      allow create: if owns(request.resource.data.p1) && !tourCarteira(request.resource.data.torneio);
+      allow update: if (owns(resource.data.p1) || owns(resource.data.p2) || isOrg()) && !tourCarteira(resource.data.torneio);
+      allow delete: if (owns(resource.data.p1) || isOrg()) && !tourCarteira(resource.data.torneio);
+    }
+
+    // Comprovantes: só quem mandou e a organização veem. Só a organização aprova.
+    match /comprovantes/{id} {
+      allow read: if isOrg() || owns(resource.data.from);
+      allow create: if owns(request.resource.data.from) && request.resource.data.status == 'pendente';
+      allow update: if isOrg() || (owns(resource.data.from) && request.resource.data.status == 'pendente');
+      allow delete: if isOrg();
+    }
+
+    // Poker: só a organização cria mesas; quem está logado joga.
+    // As cartas de cada um ficam num documento que só o dono lê, e o resto do
+    // baralho fica com quem deu as cartas daquela mão (também só ele lê).
+    match /poker/{code} {
+      allow read: if signedIn();
+      allow create: if isOrg();
+      allow update: if signedIn();
+      allow delete: if isOrg();
+      match /cartas/{key} {
+        allow read: if signedIn() && myKey() == key;
+        allow write: if signedIn();
+      }
+      match /baralho/{key} {
+        allow read, write: if signedIn() && myKey() == key;
+      }
+    }
+
+    // Carteira de fichas do poker (100 fichas = R$ 1).
+    // Sem servidor, as mesas precisam creditar a carteira de quem sai; por isso
+    // quem está logado pode mexer, mas tudo fica registrado em "movimentos",
+    // que ninguém altera nem apaga, para a organização conferir antes de pagar.
+    match /carteiras/{key} {
+      allow read: if signedIn();
+      allow create, update: if signedIn();
+      allow delete: if false;
+    }
+    match /movimentos/{id} {
+      allow read: if signedIn();
+      allow create: if signedIn();
+      allow update, delete: if false;
+    }
+    // Pedidos de depósito: o jogador avisa que fez o Pix; só a organização confirma ou recusa.
+    match /depositos/{id} {
+      allow read: if signedIn();
+      allow create: if owns(request.resource.data.key) && request.resource.data.status == 'pendente';
+      allow update: if isOrg();
+      allow delete: if false;
+    }
+    // Saques: o jogador pede no próprio nome; só a organização marca como pago ou recusa.
+    match /saques/{id} {
+      allow read: if signedIn();
+      allow create: if owns(request.resource.data.key) && request.resource.data.status == 'pendente';
+      allow update: if isOrg();
+      allow delete: if false;
+    }
+
+    // CARTEIRA EM REAIS (e modo fichas): tudo é gravado só pelo servidor (Cloud Functions).
+    // Cada jogador lê só o que é dele; a organização lê o necessário para conferir.
+    match /perfis/{key} {            // CPF e data de nascimento
+      allow read: if signedIn() && (myKey() == key || isOrg());
+      allow write: if false;
+    }
+    match /cpfs/{cpf} {              // índice: um CPF por conta
+      allow read, write: if false;
+    }
+    match /saldos/{id} {            // a organização lê todos (saldo no Mercado Pago ao vivo)
+      allow read: if signedIn() && (isOrg() || resource.data.key == myKey());
+      allow write: if false;
+    }
+    match /lancamentos/{id} {        // livro-caixa: imutável, lido pelo servidor
+      allow read, write: if false;
+    }
+    match /depositosPix/{id} {
+      allow read: if signedIn() && (resource.data.key == myKey() || isOrg());
+      allow write: if false;
+    }
+    match /saquesPix/{id} {
+      allow read: if signedIn() && (resource.data.key == myKey() || isOrg());
+      allow write: if false;
+    }
+    match /indicacoes/{key} {          // quem convidou quem (o servidor grava)
+      allow read: if signedIn() && (key == myKey() || resource.data.por == myKey() || isOrg());
+      allow write: if false;
+    }
+    match /bonus/{id} {                // bônus travados até jogar N vezes o valor
+      allow read: if signedIn() && (resource.data.key == myKey() || isOrg());
+      allow write: if false;
+    }
+    match /alertas/{id} {
+      allow read: if isOrg();
+      allow write: if false;
+    }
+    match /conferencias/{id} {
+      allow read: if isOrg();
+      allow write: if false;
+    }
+
+    // Pagamentos: o servidor cria no fim da partida; só quem recebe marca como recebido.
+    match /pagamentos/{id} {
+      allow read: if signedIn();
+      allow create: if false;
+      allow update: if owns(resource.data.to)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'confirmedAt'])
+        && request.resource.data.status == 'recebido';
+      allow delete: if false;
+    }
+  }
+}

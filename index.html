@@ -619,7 +619,7 @@ details.fold[open] { padding-bottom: 12px; }
 <script src="truco-engine.js?v=20261124b"></script>
 <script src="poker.js?v=20261124b"></script>
 <!-- ao mudar truco-engine.js, poker.js ou carteira.js, troque o ?v= para o navegador baixar de novo -->
-<script src="carteira.js?v=20261124g"></script>
+<script src="carteira.js?v=20261124h"></script>
 <script>
 /* =========================================================
    REGRAS — vêm do arquivo truco-engine.js (o mesmo que roda no servidor e nos testes)
@@ -2339,7 +2339,7 @@ function renderTourPanel() {
   const inv = myInvites.map(i => `<div class="pay-row"><div><b class="team0">${esc(i.names?.[i.p1] || i.p1)}</b> te chamou para fazer dupla no torneio <b>${esc(i.tname || '')}</b></div>
       <div class="row"><button class="small primary" data-invok="${esc(i.id)}">Aceitar</button><button class="small danger" data-invno="${esc(i.id)}">Recusar</button></div></div>`).join('');
   const items = toursList.map(t => `<div class="mesa-item"><div><b>${esc(t.nome)}</b> <span class="tag">${esc(TOUR_STATUS[t.status] || t.status)}</span>
-      <div class="muted" style="font-size:13px">$ ${esc(t.fee)} por jogador · até ${esc(t.maxDuplas)} duplas · melhor de 3</div></div>
+      <div class="muted" style="font-size:13px">${t.fee > 0 ? `R$ ${esc(t.fee)} por jogador${t.carteira ? ' (do saldo)' : ''}` : 'grátis'} · até ${esc(t.maxDuplas)} duplas · melhor de 3</div></div>
       <button class="small" data-tour="${esc(t.id)}">Abrir</button></div>`).join('');
   el.innerHTML = `<h2>Torneios</h2>
     ${inv ? `<h3>Convites para você</h3>${inv}` : ''}
@@ -2358,13 +2358,13 @@ function showCreateTournament() {
     <h2>Criar torneio</h2>
     <form id="tourForm" class="row" novalidate>
       <label style="flex:1 1 100%">Nome do torneio<input id="tNome" maxlength="40" placeholder="Ex.: Copa do Zap"></label>
-      <label style="flex:1 1 140px">Valor por jogador ($)<input id="tFee" type="number" min="0" max="10000" value="10"></label>
+      <label style="flex:1 1 140px">Valor por jogador (R$)<input id="tFee" type="number" min="0" max="1000" value="10" inputmode="numeric"></label>
       <label style="flex:1 1 140px">Máximo de duplas (2 a 32)<input id="tMax" type="number" min="2" max="32" value="8"></label>
       <label style="flex:1 1 140px">Prêmio 1º lugar (%)<input id="tP1" type="number" min="0" max="100" value="70"></label>
       <label style="flex:1 1 140px">Prêmio 2º lugar (%)<input id="tP2" type="number" min="0" max="100" value="30"></label>
-      <h3 style="flex:1 1 100%">Conta para o pagamento das inscrições (Pix)</h3>
+      ${fns ? `<p class="muted" style="flex:1 1 100%;font-size:13px;margin:0">A inscrição sai do <b>saldo da Carteira</b> de cada jogador. No fim da final, o prêmio cai sozinho no saldo da dupla campeã e da vice (menos a taxa da casa de ${esc(String((cart && cart.r && cart.r.regras && cart.r.regras.taxaPartida) ?? 2).replace('.', ','))}%).</p>` : `<h3 style="flex:1 1 100%">Conta para o pagamento das inscrições (Pix)</h3>
       <label style="flex:2 1 200px">Nome (titular)<input id="tPixNome" maxlength="60"></label>
-      <label style="flex:3 1 100%">Chave aleatória<input id="tPixChave" maxlength="36" placeholder="1a2b3c4d-1a2b-1a2b-1a2b-1a2b3c4d5e6f" autocomplete="off" spellcheck="false" value="${ORG_PIX.chave}"></label>
+      <label style="flex:3 1 100%">Chave aleatória<input id="tPixChave" maxlength="36" placeholder="1a2b3c4d-1a2b-1a2b-1a2b-1a2b3c4d5e6f" autocomplete="off" spellcheck="false" value="${ORG_PIX.chave}"></label>`}
       <p id="tErr" class="form-error" hidden></p>
       <div class="row" style="flex:1 1 100%"><button class="primary" type="submit">Criar torneio</button><button type="button" id="tCancel">Cancelar</button></div>
     </form>
@@ -2378,6 +2378,13 @@ function showCreateTournament() {
     const fee = Math.round(+document.getElementById('tFee').value);
     const maxDuplas = Math.round(+document.getElementById('tMax').value);
     const p1 = Math.round(+document.getElementById('tP1').value), p2 = Math.round(+document.getElementById('tP2').value);
+    if (fns) {
+      const btn = e.submitter || document.querySelector('#tourForm [type=submit]'); if (btn) btn.disabled = true;
+      const out = await callServer('torneioCriar', { nome, fee, maxDuplas, premio: [p1, p2] });
+      if (btn) btn.disabled = false;
+      if (out && out.id) openTournament(out.id);
+      return;
+    }
     const pixNome = document.getElementById('tPixNome').value.trim();
     const pixChave = document.getElementById('tPixChave').value.trim().toLowerCase();
     if (!nome) return err('Dê um nome ao torneio.');
@@ -2402,6 +2409,12 @@ function stopLobbySubs() {
 // ---- inscrição em dupla ----
 async function signUpDuo(tid, partnerName) {
   const t = tour && tour.t; if (!t) return;
+  if (t.carteira) {
+    if (!(partnerName || '').trim()) return toast('Digite o usuário do seu parceiro.');
+    const out = await callServer('torneioInscrever', { tid, parceiro: partnerName });
+    if (out) { toast(out.pago ? `Dupla inscrita: ${brl(out.pago)} saiu do seu saldo. Agora seu parceiro precisa aceitar.` : 'Dupla inscrita. Agora seu parceiro precisa aceitar.', 6000); if (typeof loadCarteira === 'function') loadCarteira(); }
+    return;
+  }
   const key = userKey(partnerName || '');
   if (key.length < 3) return toast('Digite o usuário do seu parceiro.');
   if (key === myId) return toast('O parceiro tem que ser outra pessoa.');
@@ -2417,12 +2430,18 @@ async function signUpDuo(tid, partnerName) {
   } catch { toast('Não deu para inscrever.'); }
 }
 async function answerInvite(id, yes) {
+  const inv = myInvites.find(x => x.id === id) || (tour && tour.insc.find(x => x.id === id));
+  if (inv && inv.carteira) {
+    const out = await callServer('torneioResponder', { id, aceitar: !!yes });
+    if (out) { toast(yes ? (out.pago ? `Dupla confirmada: ${brl(out.pago)} saiu do seu saldo.` : 'Dupla confirmada.') : 'Convite recusado. Quem te chamou recebeu o valor de volta.', 6000); if (typeof loadCarteira === 'function') loadCarteira(); }
+    return;
+  }
   try {
     await transact('inscricoes/' + id, i => (i && i.p2 === myId && i.status === 'convite' ? { ...i, status: yes ? 'aceito' : 'recusado', updatedAt: Date.now() } : null));
     toast(yes ? 'Convite aceito. Falta mandar o comprovante.' : 'Convite recusado.');
   } catch { toast('Não deu para responder.'); }
 }
-const duoConfirmed = i => i.status === 'aceito' && i.pay && i.pay[i.p1] === 'aprovado' && i.pay[i.p2] === 'aprovado';
+const duoConfirmed = i => i.status === 'aceito' && (i.carteira ? (!i.valor || (i.pay[i.p1] === 'pago' && i.pay[i.p2] === 'pago')) : (i.pay && i.pay[i.p1] === 'aprovado' && i.pay[i.p2] === 'aprovado'));
 function duoState(i) {
   if (i.status === 'recusado') return ['Recusada', 'neg'];
   if (i.status === 'convite') return ['Esperando o parceiro aceitar', ''];
@@ -2510,13 +2529,24 @@ function renderTournament() {
   const mine = live.find(i => i.p1 === myId || i.p2 === myId);
   const players = confirmed.length * 2;
   const pot = players * t.fee;
+  const W = !!t.carteira; // torneio valendo saldo da carteira
+  const brlR = v => brl(Math.round(v * 100));
+  const liquido = Math.round(pot * 100 * (1 - (t.taxaPct || 0) / 100)) / 100;
   const ch = tour.chave;
   const byId = Object.fromEntries(tour.insc.map(i => [i.id, i]));
 
   // minha inscrição
   let me = '';
   if (!account) me = '<p class="muted">Entre com seu usuário para se inscrever.</p>';
-  else if (mine) {
+  else if (mine && W) {
+    const [st, cls] = duoState(mine);
+    const partner = mine.p1 === myId ? mine.p2 : mine.p1, pago = (mine.pay || {});
+    me = `<p>Sua dupla: <b>${esc(duoName(mine))}</b> · <span class="${cls}">${esc(st)}</span></p>
+      ${mine.valor ? `<p class="muted" style="font-size:13px">Inscrição: ${pago[myId] === 'pago' ? `você pagou ${brl(mine.valor)} do saldo` : 'você ainda não pagou'} · ${esc((mine.names && mine.names[partner]) || partner)}: ${pago[partner] === 'pago' ? 'pagou' : 'ainda não pagou'}.</p>` : ''}
+      ${mine.status === 'convite' && mine.p1 === myId ? '<p class="muted">Esperando seu parceiro aceitar o convite (aparece para ele no saguão, em Torneios). Se ele recusar, o valor volta para o seu saldo.</p>' : ''}
+      ${mine.status === 'convite' && mine.p2 === myId ? `<div class="row"><button class="primary small" data-invok="${esc(mine.id)}">${mine.valor ? `Aceitar e pagar ${brl(mine.valor)} do saldo` : 'Aceitar convite'}</button><button class="danger small" data-invno="${esc(mine.id)}">Recusar</button></div>` : ''}
+      ${t.status === 'inscricoes' && mine.p1 === myId ? `<div class="row"><button class="small danger" id="duoCancel">Cancelar inscrição${mine.valor ? ' (o valor volta)' : ''}</button></div>` : ''}`;
+  } else if (mine) {
     const [st, cls] = duoState(mine);
     const partner = mine.p1 === myId ? mine.p2 : mine.p1;
     const myPay = (mine.pay || {})[myId] || 'nao';
@@ -2530,7 +2560,7 @@ function renderTournament() {
       ${t.status === 'inscricoes' && mine.p1 === myId ? `<div class="row"><button class="small danger" id="duoCancel">Cancelar inscrição</button></div>` : ''}`;
   } else if (t.status === 'inscricoes') {
     me = live.length >= t.maxDuplas ? '<p class="muted">As vagas acabaram.</p>' : `<form class="row" id="duoForm"><input id="duoPartner" maxlength="16" placeholder="Usuário do seu parceiro" style="flex:1 1 160px" aria-label="Usuário do seu parceiro"><button class="primary small" type="submit">Inscrever dupla</button></form>
-      <p class="muted" style="font-size:13px">Seu parceiro recebe um convite e precisa aceitar. Depois, cada um paga $ ${esc(t.fee)} e manda o comprovante.</p>`;
+      <p class="muted" style="font-size:13px">${W ? (t.fee > 0 ? `Ao inscrever, <b>R$ ${esc(t.fee)}</b> sai do seu saldo da Carteira. Seu parceiro recebe o convite e paga a parte dele ao aceitar.` : 'Seu parceiro recebe um convite e precisa aceitar.') : `Seu parceiro recebe um convite e precisa aceitar. Depois, cada um paga $ ${esc(t.fee)} e manda o comprovante.`}</p>`;
   } else me = '<p class="muted">As inscrições estão fechadas.</p>';
 
   // lista de duplas
@@ -2538,7 +2568,15 @@ function renderTournament() {
 
   // área da organização
   let org = '';
-  if (isOrg()) {
+  if (isOrg() && W) {
+    org = `<section class="panel">
+      <h2>Organização</h2>
+      ${t.status === 'inscricoes' ? `<div class="row"><button class="primary" id="tDraw" ${confirmed.length >= 2 ? '' : 'disabled'}>Fechar inscrições e sortear (${confirmed.length} duplas confirmadas)</button></div>
+        <p class="muted" style="font-size:13px">Só entram no sorteio as duplas confirmadas (convite aceito e os dois pagaram). Quem não fechou recebe o valor de volta no saldo.</p>` : ''}
+      <div class="row"><button class="small danger" id="tDelete">Excluir torneio</button></div>
+      ${t.premiado ? '' : '<p class="muted" style="font-size:12px">Excluir antes do fim devolve a inscrição de todos.</p>'}
+    </section>`;
+  } else if (isOrg()) {
     const pend = tour.comps.filter(c => c.status === 'pendente');
     org = `<section class="panel">
       <h2>Organização</h2>
@@ -2562,7 +2600,8 @@ function renderTournament() {
     const potF = ch.pot != null ? ch.pot : pot;
     bracket = `<section class="panel">
       <h2>Chave</h2>
-      ${champ ? `<div class="champ"><span>🏆 Campeões</span><b>${esc(duoName(champ))}</b>
+      ${champ && W ? `<div class="champ"><span>🏆 Campeões</span><b>${esc(duoName(champ))}</b>
+        <span class="muted">${t.premiado && t.premiado.pote ? `Prêmio pago no saldo: ${brl(t.premiado.cada1)} para cada campeão${t.premiado.cada2 ? ` e ${brl(t.premiado.cada2)} para cada um de ${esc(duoName(vice))}` : ''}.` : t.fee > 0 ? 'Pagando o prêmio…' : ''}</span></div>` : champ ? `<div class="champ"><span>🏆 Campeões</span><b>${esc(duoName(champ))}</b>
         <span class="muted">Prêmio: $ ${Math.round(potF * t.premio[0] / 100)} para a dupla campeã${t.premio[1] ? ` e $ ${Math.round(potF * t.premio[1] / 100)} para ${esc(duoName(vice))}` : ''}. A organização faz o pagamento.</span></div>` : ''}
       <div class="bracket">${ch.rounds.map((round, r) => `<div class="round"><h3>${ROUND_NAMES(round.length)}</h3>${round.map((m, i) => {
         const A = m.a === 'BYE' ? null : byId[m.a], B = m.b === 'BYE' ? null : byId[m.b];
@@ -2582,8 +2621,9 @@ function renderTournament() {
       <section class="panel">
         <h3>Como funciona</h3>
         <p>Duplas (2x2), todas as partidas em <b>melhor de 3</b>, com sorteio dos confrontos. Até <b>${esc(t.maxDuplas)}</b> duplas.</p>
-        <p>Inscrição: <b>$ ${esc(t.fee)} por jogador</b>. Prêmio: <b>${esc(t.premio[0])}%</b> para a dupla campeã${t.premio[1] ? ` e <b>${esc(t.premio[1])}%</b> para a vice` : ''}${players ? ` (hoje: $ ${pot} arrecadados de ${players} jogadores confirmados)` : ''}.</p>
-        ${t.fee > 0 ? `<h3>Pague a inscrição neste Pix</h3><dl class="pix"><dt>Nome</dt><dd>${esc(t.pixNome)}</dd><dt>Tipo</dt><dd>Aleatória</dd><dt>Chave</dt><dd class="pix-key"><span class="key-text">${esc(t.pixChave)}</span><button type="button" class="small primary" data-copy="${esc(t.pixChave)}">Copiar</button></dd></dl>` : ''}
+        ${W ? `<p>Inscrição: <b>${t.fee > 0 ? `R$ ${esc(t.fee)} por jogador, paga com o saldo da Carteira` : 'grátis'}</b>.${t.fee > 0 ? ` Prêmio: <b>${esc(t.premio[0])}%</b> para a dupla campeã${t.premio[1] ? ` e <b>${esc(t.premio[1])}%</b> para a vice` : ''}, depois da taxa da casa de ${esc(String(t.taxaPct ?? 0).replace('.', ','))}%. Cai sozinho no saldo quando a final acabar.` : ''}</p>
+        ${players && t.fee > 0 ? `<p class="muted" style="font-size:13px">Hoje: ${brlR(pot)} de ${players} jogadores confirmados → ${brlR(liquido * t.premio[0] / 100)} para a dupla campeã${t.premio[1] ? ` e ${brlR(liquido * t.premio[1] / 100)} para a vice` : ''}.</p>` : ''}` : `<p>Inscrição: <b>$ ${esc(t.fee)} por jogador</b>. Prêmio: <b>${esc(t.premio[0])}%</b> para a dupla campeã${t.premio[1] ? ` e <b>${esc(t.premio[1])}%</b> para a vice` : ''}${players ? ` (hoje: $ ${pot} arrecadados de ${players} jogadores confirmados)` : ''}.</p>`}
+        ${t.fee > 0 && !W ? `<h3>Pague a inscrição neste Pix</h3><dl class="pix"><dt>Nome</dt><dd>${esc(t.pixNome)}</dd><dt>Tipo</dt><dd>Aleatória</dd><dt>Chave</dt><dd class="pix-key"><span class="key-text">${esc(t.pixChave)}</span><button type="button" class="small primary" data-copy="${esc(t.pixChave)}">Copiar</button></dd></dl>` : ''}
       </section>
       <section class="panel"><h2>Sua inscrição</h2>${me}</section>
     </div>
@@ -2596,15 +2636,24 @@ function renderTournament() {
   document.getElementById('tBack').onclick = () => { closeTournament(); showLobby(); };
   { const dp = document.getElementById('duoPartner'); if (dp && keepVal) { dp.value = keepVal; if (keepFocus) dp.focus(); } }
   const df = document.getElementById('duoForm'); if (df) df.onsubmit = e => { e.preventDefault(); signUpDuo(tour.id, document.getElementById('duoPartner').value); };
-  const dc = document.getElementById('duoCancel'); if (dc) dc.onclick = () => db.doc('inscricoes/' + mine.id).delete().then(() => toast('Inscrição cancelada.'), () => toast('Não deu para cancelar.'));
+  const dc = document.getElementById('duoCancel');
+  if (dc) dc.onclick = W
+    ? () => confirmInline(dc, 'Cancelar mesmo?', async () => { const out = await callServer('torneioCancelar', { id: mine.id }); if (out) { toast(mine.valor ? 'Inscrição cancelada. O valor voltou para o saldo.' : 'Inscrição cancelada.'); if (typeof loadCarteira === 'function') loadCarteira(); } })
+    : () => db.doc('inscricoes/' + mine.id).delete().then(() => toast('Inscrição cancelada.'), () => toast('Não deu para cancelar.'));
   const rf = document.getElementById('rcFile'); if (rf) rf.onchange = e => { const f = e.target.files[0]; if (f) sendReceipt(tour.id, f); };
   $app.querySelectorAll('[data-invok]').forEach(b => (b.onclick = () => answerInvite(b.dataset.invok, true)));
   $app.querySelectorAll('[data-invno]').forEach(b => (b.onclick = () => answerInvite(b.dataset.invno, false)));
   $app.querySelectorAll('[data-rok]').forEach(b => (b.onclick = () => judgeReceipt(tour.comps.find(c => c.id === b.dataset.rok), true)));
   $app.querySelectorAll('[data-rno]').forEach(b => (b.onclick = () => judgeReceipt(tour.comps.find(c => c.id === b.dataset.rno), false)));
   $app.querySelectorAll('[data-zoom]').forEach(a => (a.onclick = e => { e.preventDefault(); const c = tour.comps.find(x => x.id === a.dataset.zoom); if (c) zoomReceipt(c); }));
-  const dr = document.getElementById('tDraw'); if (dr) dr.onclick = () => drawBracket(confirmed, pot);
-  const del = document.getElementById('tDelete'); if (del) del.onclick = () => confirmInline(del, 'Excluir mesmo?', () => deleteTournament());
+  const dr = document.getElementById('tDraw');
+  if (dr) dr.onclick = W
+    ? async () => { dr.disabled = true; const out = await callServer('torneioSortear', { tid: tour.id }); if (out) toast(`Sorteio feito! ${out.duplas} duplas na chave.${out.devolvidas ? ` ${out.devolvidas} que não fecharam receberam o valor de volta.` : ''}`, 6000); else dr.disabled = false; }
+    : () => drawBracket(confirmed, pot);
+  const del = document.getElementById('tDelete');
+  if (del) del.onclick = () => confirmInline(del, 'Excluir mesmo?', W
+    ? async () => { const out = await callServer('torneioExcluir', { tid: tour.id }); if (out) { closeTournament(); showLobby(); toast('Torneio excluído. As inscrições voltaram para o saldo.'); } }
+    : () => deleteTournament());
   $app.querySelectorAll('[data-play-match]').forEach(b => (b.onclick = () => { const [r, i] = b.dataset.playMatch.split('-').map(Number); playMatch(r, i); }));
   $app.querySelectorAll('[data-watch]').forEach(b => (b.onclick = () => { const id = tour.id; closeTournament(); openTable(b.dataset.watch); tourReturn = id; }));
 }
