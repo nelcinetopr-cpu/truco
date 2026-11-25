@@ -375,6 +375,11 @@ body.in-game .mtools { display: flex; }
   border: 3px solid var(--card);
 }
 .card.covered { background: repeating-linear-gradient(45deg, #2f4a3f 0 6px, #3a5a4c 6px 12px); border: 3px solid var(--card); }
+/* segurar a carta para jogar coberta: ela vai virando enquanto o dedo segura */
+.hand .card[data-play] { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; touch-action: manipulation; }
+.hand .card.segurando { animation: virarCoberta .45s ease-in forwards; }
+@keyframes virarCoberta { to { transform: translateY(-10px) perspective(500px) rotateY(88deg); filter: brightness(.55); } }
+@media (prefers-reduced-motion: reduce) { .hand .card.segurando { animation: none; opacity: .6; } }
 
 .hand { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; min-height: 112px; align-items: flex-end; }
 .hand .card { width: clamp(64px, 18vw, 92px); font-size: clamp(14px, 3.4vw, 19px); transition: transform .12s; }
@@ -961,6 +966,7 @@ const AUTH_MSG = {
 
 let db = null, myId = null, canWrite = true, localMode = false;
 let cur = null, code = null, unsubTable = null, unsubList = null, busy = false, cover = false;
+const SEGURAR_MS = 450; let semCliqueAte = 0; // segurar a carta = jogar coberta
 let myNick = '', account = null, unsubRank = null;
 const CHIP_VALUES = [5, 10, 20, 50]; // entrada por jogador em reais
 const stakeLabel = v => (+v ? `R$ ${v}` : 'grátis');
@@ -1851,7 +1857,7 @@ function rulesHtml() {
     <li>Melhor de 3 vazas. Se a primeira cangar, quem fizer a segunda leva. Se empatar depois de alguém fazer a primeira, quem fez a primeira leva. Se a primeira e a segunda empatarem, a terceira decide. Se as três empatarem, ganha quem jogou o naipe mais forte na terceira (paus &gt; copas &gt; espadas &gt; ouros).</li>
     <li>Com truco (ou seis, nove, doze) aceito, quem pediu tem que ganhar: se empatar de novo depois de uma vaza empatada, quem pediu perde.</li>
     <li>Truco vale 3, depois seis, nove e doze. Quem corre dá ao outro time o valor que estava valendo.</li>
-    <li>Da segunda vaza em diante dá para jogar a carta coberta (não vale nada).</li>
+    <li>Da segunda vaza em diante dá para jogar a carta coberta (não vale nada): segure a carta que ela vira sozinha.</li>
     <li>Mão de onze: o time com 11 decide se joga (vale 3) ou corre (o outro time ganha 1). No 2x2 e no 3x3 dá para ver as cartas do parceiro antes. Sem truco, seis, nove ou doze.</li>
     <li>Mão de ferro (11 a 11): mão normal, cada um vê só as próprias cartas (ninguém vê as do parceiro). Vale 1, sem truco, seis, nove ou doze.</li>
     <li>Partida até 12 tentos. Cada partida vale o valor da mesa ($ 1 a $ 100). Times se alternam nas cadeiras: 1, 3, 5 contra 2, 4, 6.</li>
@@ -3256,7 +3262,7 @@ function render() {
   let msg = '', btns = '';
   if (st.phase === 'play') {
     if (myTurn) {
-      msg = '<strong>Sua vez.</strong> Escolha uma carta.';
+      msg = r >= 1 ? '<strong>Sua vez.</strong> Escolha uma carta <span class="muted">(segure para jogar coberta)</span>.' : '<strong>Sua vez.</strong> Escolha uma carta.';
       if (canCallTruco(st, me)) btns += `<button class="shout" data-act="truco">${RAISE_NAME[NEXT_VALUE[h.value]]}!</button>`;
       if (r >= 1) btns += `<button id="cover" aria-pressed="${cover}">${cover ? 'Coberta: ligada' : 'Jogar coberta'}</button>`;
     } else msg = `Vez de <strong>${esc(nick(st, h.turn))}</strong>.`;
@@ -3347,14 +3353,34 @@ function render() {
   renderPayments();
   maybeShowPayOverlay(st);
 
-  $app.querySelectorAll('[data-play]').forEach(b => (b.onclick = () => {
-    const i = +b.dataset.play;
-    anim.from = { rect: b.getBoundingClientRect(), at: Date.now() }; // a carta sai daqui
-    const c = cover;
-    cover = false;
-    if (onServer()) return serverMove('trucoJogar', { action: { type: 'play', index: i, covered: c } });
-    commit(s => applyAction(s, me, { type: 'play', index: i, covered: c }));
-  }));
+  // tocar = joga a carta; SEGURAR = joga coberta (da segunda vaza em diante)
+  const podeCobrir = st.phase === 'play' && h.rw.length >= 1;
+  $app.querySelectorAll('[data-play]').forEach(b => {
+    const jogar = c => {
+      const i = +b.dataset.play;
+      anim.from = { rect: b.getBoundingClientRect(), at: Date.now() }; // a carta sai daqui
+      cover = false;
+      if (onServer()) return serverMove('trucoJogar', { action: { type: 'play', index: i, covered: c } });
+      commit(s => applyAction(s, me, { type: 'play', index: i, covered: c }));
+    };
+    let t = null;
+    const soltar = () => { if (t) clearTimeout(t); t = null; b.classList.remove('segurando'); };
+    b.addEventListener('pointerdown', e => {
+      if (e.button > 0 || b.disabled) return;
+      soltar();
+      if (podeCobrir) b.classList.add('segurando');
+      t = setTimeout(() => {
+        t = null; b.classList.remove('segurando');
+        semCliqueAte = Date.now() + 800; // o "soltar o dedo" não pode virar um toque em outra carta
+        if (!podeCobrir) return toast('Coberta só da segunda vaza em diante.');
+        if (navigator.vibrate) navigator.vibrate(30);
+        jogar(true);
+      }, SEGURAR_MS);
+    });
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach(ev => b.addEventListener(ev, soltar));
+    b.addEventListener('contextmenu', e => e.preventDefault());
+    b.onclick = () => { if (Date.now() < semCliqueAte) return; jogar(cover); };
+  });
   const cv = document.getElementById('cover'); if (cv) cv.onclick = () => { cover = !cover; render(); };
   $app.querySelectorAll('[data-act]').forEach(b => (b.onclick = () => {
     if (b.dataset.confirm && !confirm(b.dataset.confirm)) return;
