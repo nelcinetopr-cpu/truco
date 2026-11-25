@@ -10,7 +10,6 @@ const MODOS = { 2: '1x1', 4: '2x2', 6: '3x3' };
 const ACHOU_MS_SITE = 3 * 60 * 1000;
 const soc = { amigos: [], fila: [], unsubA: null, unsubF: null, ping: null, relogio: null, n: 2, stake: 5, parceiro: '', avisados: new Set(), abertas: new Set() };
 try { Object.assign(soc, JSON.parse(localStorage.getItem('truco.jogar') || '{}')); } catch {}
-if (!CHIP_VALUES.includes(soc.stake)) soc.stake = 5; // valor guardado que não existe mais
 try { soc.abertas = new Set(JSON.parse(sessionStorage.getItem('truco.filaMesas') || '[]')); } catch {}
 const salvaPrefs = () => { try { localStorage.setItem('truco.jogar', JSON.stringify({ n: soc.n, stake: soc.stake, parceiro: soc.parceiro })); } catch {} };
 
@@ -108,6 +107,7 @@ function renderJogar() {
     const amigos = soc.amigos.filter(a => a.status === 'amigos').map(a => a.membros.find(k => k !== me))
       .sort((a, b) => (amigoOnline(b) - amigoOnline(a)) || a.localeCompare(b));
     if (soc.parceiro && !amigos.includes(soc.parceiro)) soc.parceiro = '';
+    if (!CHIP_VALUES.includes(soc.stake)) soc.stake = 5; // valor guardado que não existe mais
     el.innerHTML = `${titulo}
       <div class="seg" role="tablist" aria-label="Modo">${[2, 4, 6].map(n => `<button type="button" role="tab" aria-selected="${soc.n === n}" data-jgn="${n}">${MODOS[n]}</button>`).join('')}</div>
       <div class="jg-opts">
