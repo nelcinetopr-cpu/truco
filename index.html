@@ -2158,7 +2158,7 @@ async function getIceServers() {
   return list;
 }
 const hasTurn = () => !!(iceCache && iceCache.hasTurn);
-const voiceOK = () => !!(window.RTCPeerConnection && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) && (localMode || !window.claude);
+const voiceOK = () => false; // voz ao vivo desligada (pedido da organização): sem botão 🎤 e o site nunca pede o microfone
 let vz = null;          // { code, session, peers: {key: {pc, offerId, remoteSession, audio, answered}}, talking: {}, unsub }
 let micStream = null, micTrack = null, pttDown = false, pttPressedAt = 0, micReleasedAt = 0;
 
