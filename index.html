@@ -581,6 +581,15 @@ details.fold[open] { padding-bottom: 12px; }
 .conf.ok > b { color: #8fd9a8; } .conf.bad { border-color: var(--red); } .conf.bad > b { color: var(--them); }
 .pk-ranks { margin: 0; padding-left: 22px; display: grid; gap: 2px; font-size: 14px; }
 .stack { display: grid; gap: 18px; align-content: start; min-width: 0; }
+.grid2.colunas { align-items: start; }
+/* no celular vira uma coluna só, nesta ordem: Amigos, Carteira, Criar, Entrar, Convite, Torneios */
+@media (max-width: 640px) {
+  .grid2.colunas { grid-template-columns: 1fr; }
+  .grid2.colunas > .stack { display: contents; }
+  #amigosPanel { order: 1; } #walletPanel { order: 2; } #criarPanel { order: 3; } #entrarPanel { order: 4; } #invitePanel { order: 5; } #tourPanel { order: 6; }
+}
+/* o conteúdo de cada painel fica no topo, mesmo quando a caixa estica ao lado de uma mais alta */
+.panel { align-content: start; }
 #walletPanel, #invitePanel, #bankAdmin { align-content: start; }
 .wallet { display: grid; gap: 4px; width: 100%; text-align: left; padding: 16px 18px; border-radius: 14px; cursor: pointer; font: inherit; color: var(--text);
   background: linear-gradient(135deg, #14523b 0%, var(--felt-deep) 70%); border: 1px solid var(--line); box-shadow: inset 0 1px 0 rgba(255,255,255,.05); }
@@ -1255,9 +1264,14 @@ function showLobby() {
   // ordem do saguão (editor de layout): Jogar agora em destaque no topo; Amigos e Carteira;
   // Criar e Entrar numa mesa; Convite e Torneios; rankings; por último a organização
   const criarGrid = document.getElementById('create').closest('.grid2'), rankGrid = document.getElementById('podium').parentElement;
+  // duas colunas que se equilibram: Amigos + Torneios | Carteira + Convite
   criarGrid.insertAdjacentHTML('beforebegin', `<section class="panel hero-jogar" id="jogarPanel"></section>
-    <div class="grid2"><section class="panel" id="amigosPanel"></section><section class="panel" id="walletPanel"></section></div>`);
-  criarGrid.insertAdjacentHTML('afterend', `<div class="grid2"><section class="panel" id="invitePanel" hidden></section><section class="panel" id="tourPanel"></section></div>`);
+    <div class="grid2 colunas"><div class="stack"><section class="panel" id="amigosPanel"></section><section class="panel" id="tourPanel"></section></div>
+    <div class="stack"><section class="panel" id="walletPanel"></section><section class="panel" id="invitePanel" hidden></section></div></div>`);
+  // Criar mesa e Entrar numa mesa vão para a coluna da esquerda, entre Amigos e Torneios
+  const esquerda = document.getElementById('amigosPanel').parentElement;
+  [...criarGrid.children].forEach((sec, i) => { sec.id = i ? 'entrarPanel' : 'criarPanel'; esquerda.insertBefore(sec, document.getElementById('tourPanel')); });
+  criarGrid.remove();
   rankGrid.insertAdjacentHTML('afterend', `<section class="panel" id="profitPanel"></section><div class="grid2"><section class="panel" id="bankAdmin" hidden></section><section class="panel" id="orgPanel"></section></div>`);
   if (typeof renderJogar === 'function') { renderJogar(); renderAmigos(); }
   renderProfit(); renderPhotoPanel(); renderTourPanel(); renderOrgPanel();
