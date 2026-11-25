@@ -206,7 +206,7 @@ body.in-game .game {
 body.in-game .board { display: flex; flex-direction: column; gap: 10px; min-height: 0; height: 100%; }
 body.in-game .side { overflow: auto; min-height: 0; align-content: start; }
 body.in-game .side > .tablebar { padding: 10px 14px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); }
-body.in-game .scorebar { grid-template-columns: repeat(5, minmax(0, 1fr)); flex: none; }
+body.in-game .scorebar { grid-template-columns: repeat(3, minmax(0, 1fr)); flex: none; }
 body.in-game .score { padding: 6px 10px; }
 body.in-game .score b { font-size: 24px; }
 body.in-game .mesa { flex: 1 1 0; min-height: 140px; aspect-ratio: auto; }
@@ -285,7 +285,29 @@ body.in-game .partner { flex: none; }
 .seat .speech.ar::after { left: auto; right: 8px; transform: none; }
 @media (prefers-reduced-motion: no-preference) { .seat .speech { animation: speechIn .18s ease-out; } }
 @keyframes speechIn { from { opacity: 0; } }
-.mtools { display: none; align-self: flex-end; gap: 10px; margin-top: -22px; margin-right: 2px; position: relative; z-index: 3; flex: none; }
+.mtools { display: none; align-self: flex-end; gap: 10px; margin-top: -22px; margin-right: 2px; position: relative; z-index: 8; flex: none; }
+body.in-game .mtools { display: flex; }
+.mtools .rbtn { background: var(--felt-deep); color: var(--text); border: 1px solid var(--line); }
+.mtools .rbtn.on { background: var(--brass); border-color: transparent; }
+.mtools .sinal-btn { background: #3a2a10; border-color: #6b4d1b; }
+.tray { position: absolute; right: 0; bottom: calc(100% + 10px); display: grid; grid-template-columns: repeat(4, 48px); gap: 6px; padding: 10px; border-radius: 16px; background: var(--panel); border: 1px solid var(--line); box-shadow: 0 12px 30px rgba(0,0,0,.55); z-index: 9; }
+.tray button { width: 48px; height: 48px; padding: 0; border-radius: 12px; font-size: 24px; background: var(--felt-deep); color: var(--text); border: 1px solid var(--line); display: grid; place-items: center; }
+.tray.sinais { grid-template-columns: repeat(3, 72px); }
+.tray.sinais p { grid-column: 1 / -1; margin: 0 0 2px; font-size: 12px; color: var(--muted); text-align: center; font-weight: 700; }
+.tray.sinais button { width: 72px; height: 58px; gap: 0; align-content: center; font-size: 20px; }
+.tray.sinais button b { font-family: var(--display); font-weight: 400; line-height: 1; }
+.tray.sinais button small { font-size: 10.5px; font-weight: 700; color: var(--muted); }
+@media (hover: hover) { .tray button:hover:not(:disabled) { background: #164a37; } }
+.seat .speech.emoji { font-size: 30px; padding: 4px 10px; background: transparent; box-shadow: none; }
+.seat .speech.emoji::after { display: none; }
+.seat .speech.sinal { background: #3a2a10; color: #ffe2a3; border: 1px solid var(--brass); }
+.seat .speech.sinal::after { border-top-color: #3a2a10; }
+.seat .speech.sinal.below::after { border-top-color: transparent; border-bottom-color: #3a2a10; }
+.sinal-tag { font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: 999px; background: #3a2a10; color: #ffe2a3; border: 1px solid var(--brass); white-space: nowrap; }
+.vira-centro { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: grid; justify-items: center; gap: 4px; z-index: 1; pointer-events: none; }
+.vira-centro .card { width: clamp(30px, 5.5vw, 46px); font-size: clamp(9px, 1.6vw, 13px); transform: rotate(-82deg); margin-block: calc(clamp(30px, 5.5vw, 46px) * -.2); }
+.vira-centro .vira-lbl { font-size: 11px; color: var(--muted); background: rgba(0,0,0,.4); padding: 2px 8px; border-radius: 999px; font-weight: 700; white-space: nowrap; }
+.vira-centro .vira-lbl b { color: var(--brass); font-family: var(--display); font-weight: 400; font-size: 14px; }
 .mtools .rbtn { width: 48px; height: 48px; padding: 0; border-radius: 50%; font-size: 21px; display: grid; place-items: center; box-shadow: 0 4px 12px rgba(0,0,0,.45); }
 .mtools .chat-toggle { display: grid; background: #164a37; border: 1px solid var(--line); }
 .chat-toggle { position: relative; display: none; font-size: 16px; padding: 6px 12px; }
@@ -297,7 +319,7 @@ body.in-game .partner { flex: none; }
   body.in-game .game { gap: 0; }
   body.in-game .side > :not(.chat-panel) { display: none; }
   body.in-game .board > .tablebar [data-ptt], body.in-game .board > .tablebar .chat-toggle { display: none; }
-  body.in-game .mtools { display: flex; }
+
   body.in-game .board > .tablebar [data-leave] { margin-left: auto; }
   .chat-panel { position: fixed; z-index: 40; left: 0; right: 0; bottom: 0; border-radius: 16px 16px 0 0; max-height: 62dvh; padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px)); padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); box-shadow: 0 -12px 40px rgba(0,0,0,.55); transform: translateY(110%); visibility: hidden; transition: transform .2s ease, visibility .2s; }
   body.chat-open .chat-panel { transform: none; visibility: visible; }
@@ -652,7 +674,7 @@ button.top-saldo, .top-saldo button { background: var(--felt-deep); color: var(-
 <script src="truco-engine.js?v=20261125a"></script>
 <script src="poker.js?v=20261124b"></script>
 <!-- ao mudar truco-engine.js, poker.js ou carteira.js, troque o ?v= para o navegador baixar de novo -->
-<script src="carteira.js?v=20261124i"></script>
+<script src="carteira.js?v=20261125b"></script>
 <script src="social.js?v=20261125a"></script>
 <script>
 /* =========================================================
@@ -1818,6 +1840,7 @@ function startChat(c) {
   stopChat();
   if (!db || solo) return;
   chatCode = c; chatOpenedAt = Date.now(); chatUnread = 0;
+  startSinais(c);
   unsubChat = db.collection('chat').where('table', '==', c).onSnapshot(snap => {
     const list = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(m => m.text).sort((a, b) => a.at - b.at);
     const known = new Set(chatMsgs.map(m => m.id));
@@ -1831,6 +1854,7 @@ function startChat(c) {
 function stopChat() {
   if (unsubChat) unsubChat();
   unsubChat = null; chatMsgs = []; chatCode = null; chatUnread = 0;
+  stopSinais();
   chatSheetOpen = false; document.body.classList.remove('chat-open');
   stopVoice();
 }
@@ -1841,14 +1865,81 @@ function onNewChat(fresh) {
   chatUnread += fresh.length; // a mensagem já aparece no balão em cima da foto
 }
 
+/* ---------- EMOJIS E SINAIS (no lugar do chat) ----------
+   Emoji: todos da mesa veem, num balão em cima de quem mandou.
+   Sinal: só o parceiro vê (o servidor grava em mesas/{mesa}/sinais/{parceiro}, que só ele lê).
+   O sinal fica marcado na cadeira de quem fez até o fim da mão. */
+const EMOJIS = ['😂', '😎', '😡', '😭', '😱', '🤔', '👏', '🔥', '🙏', '🤫', '💪', '🍀'];
+const SINAIS = [
+  ['zap', '♣', 'Zap', 'manilha de paus'], ['copas', '♥', 'Copas', 'manilha de copas'], ['espadilha', '♠', 'Espadilha', 'manilha de espadas'], ['picafumo', '♦', 'Pica-fumo', 'manilha de ouros'],
+  ['3', '3', 'Três', ''], ['2', '2', 'Dois', ''], ['A', 'A', 'Ás', ''], ['nada', '✋', 'Nada', 'não tenho nada'], ['cheio', '💯', 'Cheio', 'mão cheia'],
+];
+const sinalInfo = k => SINAIS.find(x => x[0] === k) || [k, '?', k, ''];
+let trayAberta = null, ultimoSinal = null, unsubSinal = null, sinalAbertoEm = 0, lastReacao = 0;
+const temParceiro = (st, me) => me >= 0 && st.n > 2;
+function reacoesHtml(st, me) {
+  if (!canChat()) return '';
+  const tray = trayAberta === 'emoji'
+    ? `<div class="tray" role="group" aria-label="Emojis">${EMOJIS.map(e => `<button type="button" data-emoji="${e}" aria-label="Mandar ${e}">${e}</button>`).join('')}</div>`
+    : trayAberta === 'sinal'
+      ? `<div class="tray sinais" role="group" aria-label="Sinais para o parceiro"><p>Só o seu parceiro vê</p>${SINAIS.map(([k, sym, nome, dica]) => `<button type="button" data-sinal="${k}" title="${esc(dica || nome)}"><b>${sym}</b><small>${esc(nome)}</small></button>`).join('')}</div>`
+      : '';
+  return `<div class="mtools">${tray}${voiceOK() ? '<button type="button" class="ptt rbtn" data-ptt aria-label="Segure para falar com a mesa">🎤</button>' : ''}
+    <button type="button" class="rbtn ${trayAberta === 'emoji' ? 'on' : ''}" data-tray="emoji" aria-label="Emojis" aria-expanded="${trayAberta === 'emoji'}">😀</button>
+    ${temParceiro(st, me) ? `<button type="button" class="rbtn sinal-btn ${trayAberta === 'sinal' ? 'on' : ''}" data-tray="sinal" aria-label="Sinal para o parceiro" aria-expanded="${trayAberta === 'sinal'}">🤫</button>` : ''}</div>`;
+}
+function bindReacoes() {
+  document.querySelectorAll('[data-tray]').forEach(b => (b.onclick = () => { trayAberta = trayAberta === b.dataset.tray ? null : b.dataset.tray; render(); }));
+  document.querySelectorAll('[data-emoji]').forEach(b => (b.onclick = () => { trayAberta = null; mandarEmoji(b.dataset.emoji); render(); }));
+  document.querySelectorAll('[data-sinal]').forEach(b => (b.onclick = () => { trayAberta = null; mandarSinal(b.dataset.sinal); render(); }));
+}
+async function mandarEmoji(e) {
+  if (!canChat()) return;
+  if (Date.now() - lastReacao < 800) return toast('Calma, um de cada vez.');
+  lastReacao = Date.now();
+  try { await db.collection('chat').doc(chatCode + '-' + rid()).set({ table: chatCode, from: myId, name: myNick, at: Date.now(), text: e }); }
+  catch { toast('Não deu para mandar.'); }
+}
+async function mandarSinal(k) {
+  if (Date.now() - lastReacao < 800) return toast('Calma, um de cada vez.');
+  lastReacao = Date.now();
+  const r = await callServer('trucoSinal', { code, sinal: k });
+  if (r) { const [, sym, nome] = sinalInfo(k); toast(`Sinal mandado para o parceiro: ${sym} ${nome}`, 2500); }
+}
+// recebe o sinal do parceiro (só eu leio o meu documento)
+function startSinais(c) {
+  stopSinais();
+  if (!account || solo || !window.firebase || !firebase.apps.length) return;
+  sinalAbertoEm = Date.now();
+  unsubSinal = firebase.firestore().doc(`mesas/${c}/sinais/${account.key}`).onSnapshot(s => {
+    const d = s.exists ? s.data() : null;
+    if (!d || !d.at || (ultimoSinal && ultimoSinal.at === d.at)) return;
+    const novo = d.at >= sinalAbertoEm - 60000;
+    ultimoSinal = d;
+    if (novo && Date.now() - d.at < 120000) {
+      const [, sym, nome] = sinalInfo(d.sinal);
+      showSpeech(d.de, `🤫 ${sym} ${nome}`, true);
+      if (navigator.vibrate) navigator.vibrate(40);
+    }
+    if (cur) render();
+  }, () => {});
+}
+function stopSinais() { if (unsubSinal) unsubSinal(); unsubSinal = null; ultimoSinal = null; trayAberta = null; }
+function sinalTag(key, h) {
+  const d = ultimoSinal;
+  if (!d || !key || d.de !== key || !h || (d.hid && h.hid && d.hid !== h.hid)) return '';
+  const [, sym, nome] = sinalInfo(d.sinal);
+  return `<span class="sinal-tag" title="Sinal que só você vê">🤫 ${sym} ${esc(nome)}</span>`;
+}
+
 // Balão de fala: a mensagem aparece em cima da foto de quem mandou, por 3 segundos.
 const SPEECH_MS = 3000;
 const speech = {}; // usuário -> { text, until }
-function showSpeech(key, text) {
+function showSpeech(key, text, privado = false) {
   if (!key || !text) return;
-  speech[key] = { text: text.length > 90 ? text.slice(0, 88) + '…' : text, until: Date.now() + SPEECH_MS };
+  speech[key] = { text: text.length > 90 ? text.slice(0, 88) + '…' : text, until: Date.now() + SPEECH_MS + (privado ? 1500 : 0), privado };
   applySpeech();
-  setTimeout(applySpeech, SPEECH_MS + 50);
+  setTimeout(applySpeech, SPEECH_MS + (privado ? 1550 : 50));
 }
 function applySpeech() {
   const now = Date.now();
@@ -1858,6 +1949,8 @@ function applySpeech() {
     if (!s || s.until <= now) { if (b) b.remove(); return; }
     if (!b) { b = document.createElement('div'); b.className = 'speech'; b.setAttribute('role', 'status'); el.prepend(b); }
     b.textContent = s.text;
+    b.classList.toggle('sinal', !!s.privado);
+    b.classList.toggle('emoji', !s.privado && [...s.text].length <= 2);
     const mesa = el.closest('.mesa');
     // na metade de cima da mesa o balão vai para baixo, para não sair da mesa
     const below = mesa && (el.offsetTop + el.offsetHeight / 2) < mesa.clientHeight * 0.45;
@@ -1891,7 +1984,7 @@ function chatPanelHtml() {
   </section>`;
 }
 // botões da linha de cima: 💬 (celular) e 🎤 segurar para falar
-const chatToggleHtml = () => (solo ? '' : `${voiceOK() && canChat() ? '<button type="button" class="small ptt" data-ptt aria-label="Segure para falar com a mesa">🎤 Falar</button>' : ''}<button type="button" class="small chat-toggle" data-chatopen aria-label="Abrir conversa">💬${chatUnread ? `<span class="badge">${chatUnread}</span>` : ''}</button>`);
+const chatToggleHtml = () => (solo ? '' : `${voiceOK() && canChat() ? '<button type="button" class="small ptt" data-ptt aria-label="Segure para falar com a mesa">🎤 Falar</button>' : ''}`);
 
 function renderChat() {
   const list = document.getElementById('chatList');
@@ -3031,7 +3124,7 @@ function render() {
     const backs = Array.from({ length: left }, () => '<span class="card back"></span>').join('');
     const shown = h.mostradas && h.mostradas[s];
     const cardsRow = shown ? `<span class="mini shown">${shown.map(c => cardHtml(c, h.vira)).join('')}</span>` : `<span class="mini">${backs}</span>`;
-    seatsHtml += `<div class="seat ${cls} ${s === actor ? 'turn' : ''}" data-seat="${s}" data-key="${esc(st.seats[s] || '')}" style="left:${p.x}%;top:${p.y}%">${avatarHtml(st.seats[s], nick(st, s))}<span class="name">${esc(nick(st, s))}${s === st.dealer ? '<span class="pe-chip" title="Pé: joga por último">PÉ</span>' : ''}</span>${cardsRow}${s === h.mao ? '<span class="role">mão</span>' : ''}</div>`;
+    seatsHtml += `<div class="seat ${cls} ${s === actor ? 'turn' : ''}" data-seat="${s}" data-key="${esc(st.seats[s] || '')}" style="left:${p.x}%;top:${p.y}%">${avatarHtml(st.seats[s], nick(st, s))}<span class="name">${esc(nick(st, s))}${s === st.dealer ? '<span class="pe-chip" title="Pé: joga por último">PÉ</span>' : ''}</span>${cardsRow}${s === h.mao ? '<span class="role">mão</span>' : ''}${sinalTag(st.seats[s], h)}</div>`;
   }
   // cartas jogadas: rodada atual, ou a última encerrada
   let showRound = h.played[r] && h.played[r].length ? r : r - 1;
@@ -3047,12 +3140,12 @@ function render() {
   }
   const hk = handKey(st);
   const playedHtml = plays.map(p => {
-    const q = pos(p.seat, st.n === 6 ? [22, 24] : [20, 15]);
+    const q = pos(p.seat, st.n === 6 ? [23, 26] : [22, 24]);
     // de onde a carta sai: da cadeira de quem jogou (a minha vem de baixo, da mão)
     const f = seated && p.seat === me ? { x: 50, y: 118 } : pos(p.seat, [35, 37]);
     return `<div class="played ${p.seat === winSeat ? 'win' : ''} ${old && st.phase === 'play' ? 'old' : ''}" data-ak="${hk}|${showRound}|${p.seat}" data-from="${f.x - q.x},${f.y - q.y}" style="left:${q.x}%;top:${q.y}%">${p.covered ? '<span class="card covered"></span>' : cardHtml(p.card, h.vira)}</div>`;
   }).join('');
-  const viraHtml = `<div class="score vira-tile"><h3>Vira</h3><div class="row" style="gap:8px;flex-wrap:nowrap">${cardHtml(h.vira, null)}<span class="vlbl">manilha<br><b class="mrk">${manilhaRank(h.vira)}</b></span></div></div>`;
+  const viraHtml = `<div class="vira-centro" aria-label="Vira ${esc(h.vira)}, manilha ${esc(manilhaRank(h.vira))}">${cardHtml(h.vira, null)}<span class="vira-lbl">manilha <b>${manilhaRank(h.vira)}</b></span></div>`;
   const lastTrick = plays.length && old && st.phase === 'play' ? '<div class="last-trick">mão anterior</div>' : '';
   // a mão acabou: diz no meio da mesa quem levou e como (a carta que sobrou não vale mais)
   let handResult = '';
@@ -3155,24 +3248,23 @@ function render() {
       <div class="scorebar">
         <div class="score us"><h3>${usLabel}</h3><b>${scoreUs}</b></div>
         <div class="score them"><h3>${themLabel}</h3><b>${scoreThem}</b></div>
-        <div class="score"><h3>Valendo</h3><b>${h.value}</b></div>
         <div class="score"><h3>Vazas</h3><div class="pips" style="margin-top:8px">${pips}</div></div>
-        ${viraHtml}
       </div>
-      <div class="mesa ${st.n === 6 ? 'six' : ''}">${seatsHtml}${playedHtml}${lastTrick}${handResult}${banner}${endPop}
+      <div class="mesa ${st.n === 6 ? 'six' : ''}">${viraHtml}${seatsHtml}${playedHtml}${lastTrick}${handResult}${banner}${endPop}
         ${seated ? (() => { const p = pos(me, [40, 40]); return `<div class="seat us me ${me === actor ? 'turn' : ''}" data-key="${esc(st.seats[me] || '')}" style="left:${p.x}%;top:${Math.min(p.y, 90)}%">${avatarHtml(st.seats[me], nick(st, me))}<span class="name">${esc(nick(st, me))} (você)</span></div>`; })() : ''}
       </div>
-      ${solo ? '' : `<div class="mtools">${voiceOK() && canChat() ? '<button type="button" class="ptt rbtn" data-ptt aria-label="Segure para falar com a mesa">🎤</button>' : ''}<button type="button" class="chat-toggle rbtn" data-chatopen aria-label="Abrir conversa">💬${chatUnread ? `<span class="badge">${chatUnread}</span>` : ''}</button></div>`}
+      ${solo ? '' : reacoesHtml(st, me)}
       <div class="actions"><p class="msg">${!solo && currentActor(st) >= 0 && st.turnAt ? `<span id="clock" class="clock ${timeLeft(st) <= 5 ? 'low' : ''}">${timeLeft(st)}s</span> ` : ''}${msg}</p><div class="row" style="justify-content:center">${btns}</div></div>
       ${handHtml}
       ${partnerHtml}
     </div>
-    <aside class="side">${tableBar}${chatPanelHtml()}${ledgerHtml(st)}</aside>
+    <aside class="side">${tableBar}${ledgerHtml(st)}</aside>
   </div>`;
   $app.querySelectorAll('[data-leave]').forEach(b => (b.onclick = showLobby));
   animateTable(st, hk, me, prevHand);
   if (canChat()) { if (!vz || vz.code !== code) startVoice(code); } else if (vz) stopVoice();
   bindChat();
+  bindReacoes();
   renderPayments();
   maybeShowPayOverlay(st);
 

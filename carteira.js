@@ -59,8 +59,18 @@ function paintTopCarteira() {
   if (!fns || !account) { el.innerHTML = ''; return; }
   const r = cart.r;
   el.innerHTML = `${r ? `<button type="button" class="small top-saldo" data-topwallet title="Abrir a carteira">${brl(r.saldo)}</button>` : ''}
-    <button type="button" class="small primary" data-topsheet="depositar">Depositar</button>`;
+    <button type="button" class="small primary" data-topsheet="depositar">Depositar</button>
+    <button type="button" class="small" data-topsacar>Sacar</button>`;
   el.querySelectorAll('[data-topsheet]').forEach(b => (b.onclick = () => abrirSheet(b.dataset.topsheet)));
+  // Sacar: abre a carteira já na parte de saque
+  const sq = el.querySelector('[data-topsacar]');
+  if (sq) sq.onclick = () => {
+    const p = document.getElementById('walletPanel'); if (!p) return;
+    cart.tab = 'sacar'; try { localStorage.setItem('truco.carteiraTab', 'sacar'); } catch {}
+    if (!cart.aberta) cart.aberta = true;
+    renderCarteira();
+    p.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
   const w = el.querySelector('[data-topwallet]');
   if (w) w.onclick = () => {
     const p = document.getElementById('walletPanel'); if (!p) return;

@@ -99,6 +99,11 @@ service cloud.firestore {
       match /locks/{lock} {
         allow read, write: if false;
       }
+      // sinal do parceiro: só quem recebe lê; quem grava é o servidor
+      match /sinais/{key} {
+        allow read: if signedIn() && myKey() == key;
+        allow write: if false;
+      }
     }
 
     // Partidas do ranking: as do truco são gravadas pelo servidor; o cliente só
@@ -109,11 +114,11 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
-    // Conversa da mesa (texto): só existe durante a partida e é apagada no fim.
+    // Reações da mesa (emojis): só existem durante a partida e são apagadas no fim.
     // Cada um só manda mensagem no próprio nome.
     match /chat/{id} {
       allow read: if signedIn();
-      allow create: if owns(request.resource.data.from);
+      allow create: if owns(request.resource.data.from) && request.resource.data.j is string && request.resource.data.j.size() <= 125; // só emoji (curto)
       allow delete: if signedIn();
       allow update: if false;
     }
