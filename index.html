@@ -684,7 +684,7 @@ button.top-saldo, .top-saldo button { background: var(--felt-deep); color: var(-
 <script src="poker.js?v=20261124b"></script>
 <!-- ao mudar truco-engine.js, poker.js ou carteira.js, troque o ?v= para o navegador baixar de novo -->
 <script src="carteira.js?v=20261125b"></script>
-<script src="social.js?v=20261125a"></script>
+<script src="social.js?v=20261125b"></script>
 <script>
 /* =========================================================
    REGRAS — vêm do arquivo truco-engine.js (o mesmo que roda no servidor e nos testes)
@@ -949,7 +949,7 @@ const AUTH_MSG = {
 let db = null, myId = null, canWrite = true, localMode = false;
 let cur = null, code = null, unsubTable = null, unsubList = null, busy = false, cover = false;
 let myNick = '', account = null, unsubRank = null;
-const CHIP_VALUES = [0, 1, 2, 5, 10, 20, 50, 100]; // entrada por jogador em reais (0 = grátis)
+const CHIP_VALUES = [5, 10, 20, 50]; // entrada por jogador em reais
 const stakeLabel = v => (+v ? `R$ ${v}` : 'grátis');
 try { account = JSON.parse(localStorage.getItem('truco:conta') || 'null'); } catch {}
 if (account) { myId = account.key; myNick = account.name; }
@@ -2954,7 +2954,7 @@ function genCode() { const A = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; let s = ''; fo
 async function createTable() {
   if (!account) return toast('Entre com seu usuário primeiro.');
   const n = +document.getElementById('n').value;
-  const stake = CHIP_VALUES.includes(+document.getElementById('stake').value) ? +document.getElementById('stake').value : 1;
+  const stake = CHIP_VALUES.includes(+document.getElementById('stake').value) ? +document.getElementById('stake').value : 5;
   const c = genCode();
   const st = {
     v: 1, code: c, n, stake, owner: myId, createdAt: Date.now(), updatedAt: Date.now(),
