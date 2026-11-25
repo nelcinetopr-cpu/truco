@@ -214,6 +214,15 @@ body.in-game .actions { flex: none; gap: 6px; }
 /* botões da jogada (Truco, Correr, Aceitar…) embaixo das cartas, com um espaço a mais */
 .botoes-jogo { margin-top: 6px; }
 body.in-game .botoes-jogo { margin-top: 8px; padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)); }
+/* Correr no canto esquerdo, jogar/aceitar no centro, Truco/Seis no canto direito */
+.botoes-3 { width: 100%; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; }
+.botoes-3 button { white-space: nowrap; }
+@media (max-width: 380px) { body.in-game .botoes-3 button { padding: 8px 10px; font-size: 14px; } body.in-game .botoes-3 button.shout { font-size: 16px; } }
+.botoes-3 > .b-esq { justify-self: start; }
+.botoes-3 > .b-meio { justify-self: center; }
+.botoes-3 > .b-dir { justify-self: end; }
+button.correr { background: #e5322b; border: 2px solid #ff8a80; color: #fff; text-shadow: 0 1px 1px rgba(0,0,0,.35); box-shadow: 0 3px 10px rgba(229,50,43,.35); }
+@media (hover: hover) { button.correr:hover:not(:disabled) { background: #f04339; } }
 body.in-game .hand { flex: none; min-height: 0; flex-wrap: nowrap; gap: 10px; }
 body.in-game .hand .card { width: min(92px, 20vw, 12dvh); font-size: clamp(12px, 2.4dvh, 19px); }
 body.in-game .played .card { width: min(64px, 8.5vw, 8dvh); }
@@ -3259,15 +3268,15 @@ function render() {
   }
 
   // ações
-  let msg = '', btns = '';
+  let msg = '', btns = '', bEsq = '', bMeio = '', bDir = '';
   if (st.phase === 'play') {
     if (myTurn) {
       msg = r >= 1 ? '<strong>Sua vez.</strong> Escolha uma carta <span class="muted">(segure para jogar coberta)</span>.' : '<strong>Sua vez.</strong> Escolha uma carta.';
-      if (canCallTruco(st, me)) btns += `<button class="shout" data-act="truco">${RAISE_NAME[NEXT_VALUE[h.value]]}!</button>`;
-      if (r >= 1) btns += `<button id="cover" aria-pressed="${cover}">${cover ? 'Coberta: ligada' : 'Jogar coberta'}</button>`;
+      if (canCallTruco(st, me)) bDir = `<button class="shout" data-act="truco">${RAISE_NAME[NEXT_VALUE[h.value]]}!</button>`;
+      if (r >= 1) bMeio = `<button id="cover" aria-pressed="${cover}">${cover ? 'Coberta: ligada' : 'Jogar coberta'}</button>`;
     } else msg = `Vez de <strong>${esc(nick(st, h.turn))}</strong>.`;
     // correr da mão a qualquer momento: o outro time leva o que a mão vale agora
-    if (seated) btns += `<button class="danger" data-act="correr" data-confirm="Correr da mão? ${seated ? (st.n > 2 ? 'Eles levam' : 'O adversário leva') : ''} ${h.value} ${h.value === 1 ? 'tento' : 'tentos'}.">Correr (dá ${h.value})</button>`;
+    if (seated) bEsq = `<button class="correr" data-act="correr" data-confirm="Correr da mão? ${seated ? (st.n > 2 ? 'Eles levam' : 'O adversário leva') : ''} ${h.value} ${h.value === 1 ? 'tento' : 'tentos'}.">Correr</button>`;
   } else if (st.phase === 'truco') {
     const p = h.pending;
     const correram = (p.runs || []).filter(s => s !== me);
@@ -3276,14 +3285,16 @@ function render() {
       msg = correram.length
         ? `<strong>${esc(correram.map(s => nick(st, s)).join(' e '))}</strong> quer correr do ${RAISE_NAME[p.to].toLowerCase()}. Você decide: aceita valendo ${p.to}?`
         : `<strong>${esc(nick(st, p.caller))}</strong> pediu ${RAISE_NAME[p.to].toLowerCase()}. Aceita valendo ${p.to}?${st.n > 2 ? ' <span class="muted">(se um aceitar, está aceito; só corre se o time todo correr)</span>' : ''}`;
-      btns = `<button class="primary" data-act="accept">Aceitar (${p.to})</button><button class="danger" data-act="run">Correr (dá ${h.value})</button>`;
-      if (p.to < 12) btns += `<button class="shout" data-act="raise">${RAISE_NAME[NEXT_VALUE[p.to]]}!</button>`;
+      bMeio = `<button class="primary" data-act="accept">Aceitar</button>`;
+      bEsq = `<button class="correr" data-act="run">Correr</button>`;
+      if (p.to < 12) bDir = `<button class="shout" data-act="raise">${RAISE_NAME[NEXT_VALUE[p.to]]}!</button>`;
     } else if (seated && (p.runs || []).includes(me)) msg = `Você quer correr. Esperando <strong>${esc(nick(st, p.responder))}</strong> decidir: se ele aceitar, vale ${p.to}.`;
     else msg = `${esc(nick(st, p.caller))} pediu ${RAISE_NAME[p.to].toLowerCase()}. Esperando ${st.n > 2 ? 'o outro time' : `<strong>${esc(nick(st, p.responder))}</strong>`} responder.`;
   } else if (st.phase === 'onze') {
     if (seated && h.onzeDecider === me) {
       msg = '<strong>Mão de onze.</strong> Olhe as cartas e decida pelo time.';
-      btns = `<button class="primary" data-act="onzePlay">Jogar (vale 3)</button><button class="danger" data-act="onzeRun">Correr (dá 1)</button>`;
+      bMeio = `<button class="primary" data-act="onzePlay">Jogar</button>`;
+      bEsq = `<button class="correr" data-act="onzeRun">Correr</button>`;
     } else msg = `Mão de onze: <strong>${esc(nick(st, h.onzeDecider))}</strong> está decidindo se joga.`;
   } else if (st.phase === 'handEnd') {
     const res = st.result;
@@ -3339,6 +3350,7 @@ function render() {
       ${reacoesHtml(st, me)}
       <div class="actions"><p class="msg">${!solo && currentActor(st) >= 0 && st.turnAt ? `<span id="clock" class="clock ${timeLeft(st) <= 5 ? 'low' : ''}">${timeLeft(st)}s</span> ` : ''}${msg}</p></div>
       ${handHtml}
+      ${bEsq || bMeio || bDir ? `<div class="actions botoes-jogo"><div class="botoes-3"><span class="b-esq">${bEsq}</span><span class="b-meio">${bMeio}</span><span class="b-dir">${bDir}</span></div></div>` : ''}
       ${btns ? `<div class="actions botoes-jogo"><div class="row" style="justify-content:center">${btns}</div></div>` : ''}
       ${partnerHtml}
     </div>
