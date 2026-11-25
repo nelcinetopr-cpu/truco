@@ -976,6 +976,15 @@ const AUTH_MSG = {
 let db = null, myId = null, canWrite = true, localMode = false;
 let cur = null, code = null, unsubTable = null, unsubList = null, busy = false, cover = false;
 const SEGURAR_MS = 450; let semCliqueAte = 0; // segurar a carta = jogar coberta
+// PAUSA DA VAZA: quando uma vaza fecha (alguém matou), ninguém joga por um instante,
+// para todo mundo ver quem matou antes da próxima carta.
+const VAZA_PAUSA_MS = 1000; let vazaChave = null, vazaFechouEm = 0, vazaTimer = null;
+function pausaDaVaza(h) {
+  if (!h || !h.rw || !h.rw.length) return 0;
+  const k = `${h.hid}|${h.rw.length}`;
+  if (k !== vazaChave) { vazaChave = k; vazaFechouEm = Date.now(); }
+  return Math.max(0, VAZA_PAUSA_MS - (Date.now() - vazaFechouEm));
+}
 let myNick = '', account = null, unsubRank = null;
 const CHIP_VALUES = [5, 10, 20, 50]; // entrada por jogador em reais
 const stakeLabel = v => (+v ? `R$ ${v}` : 'grátis');
@@ -1182,7 +1191,7 @@ function scheduleBot() {
   }
   const actor = st.phase === 'truco' ? h.pending.responder : st.phase === 'onze' ? h.onzeDecider : st.phase === 'play' ? h.turn : -1;
   if (actor < 0 || st.seats[actor] === myId) return;
-  botTimer = setTimeout(() => botMove(actor), st.phase === 'truco' ? 1300 : 850);
+  botTimer = setTimeout(() => botMove(actor), st.phase === 'truco' ? 1300 : 850 + (st.phase === 'play' ? pausaDaVaza(h) : 0));
 }
 
 // Qualidade da mão do robô: manilhas valem 2, cartas 2 e 3 valem 1, vazas já feitas/perdidas pesam ±1.
@@ -3254,7 +3263,10 @@ function render() {
 
   // minha mão
   let handHtml = '';
-  const myTurn = seated && st.phase === 'play' && h.turn === me && !busy;
+  const pausa = st.phase === 'play' ? pausaDaVaza(h) : 0;
+  clearTimeout(vazaTimer);
+  if (pausa > 0) vazaTimer = setTimeout(() => { if (cur === st) render(); }, pausa + 20);
+  const myTurn = seated && st.phase === 'play' && h.turn === me && !busy && pausa === 0;
   if (seated) {
     const cards = h.hands[me];
     handHtml = `<div class="hand ${myTurn ? 'playable' : ''} ${st.phase === 'handEnd' || st.phase === 'gameEnd' ? 'done' : ''}">${cards.map((c, i) => (!c ? '<span class="card back"></span>' :
@@ -3274,7 +3286,8 @@ function render() {
       msg = r >= 1 ? '<strong>Sua vez.</strong> Escolha uma carta <span class="muted">(segure para jogar coberta)</span>.' : '<strong>Sua vez.</strong> Escolha uma carta.';
       if (canCallTruco(st, me)) bDir = `<button class="shout" data-act="truco">${RAISE_NAME[NEXT_VALUE[h.value]]}!</button>`;
       if (r >= 1) bMeio = `<button id="cover" aria-pressed="${cover}">${cover ? 'Coberta: ligada' : 'Jogar coberta'}</button>`;
-    } else msg = `Vez de <strong>${esc(nick(st, h.turn))}</strong>.`;
+    } else if (seated && h.turn === me && pausa) msg = '<strong>Sua vez</strong> já já…';
+    else msg = `Vez de <strong>${esc(nick(st, h.turn))}</strong>.`;
     // correr da mão a qualquer momento: o outro time leva o que a mão vale agora
     if (seated) bEsq = `<button class="correr" data-act="correr" data-confirm="Correr da mão? ${seated ? (st.n > 2 ? 'Eles levam' : 'O adversário leva') : ''} ${h.value} ${h.value === 1 ? 'tento' : 'tentos'}.">Correr</button>`;
   } else if (st.phase === 'truco') {
