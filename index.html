@@ -630,7 +630,7 @@ details.fold[open] { padding-bottom: 12px; }
 <script src="firebase-config.js"></script>
 <script src="voz-config.js"></script>
 <script src="org-config.js"></script>
-<script src="truco-engine.js?v=20261124b"></script>
+<script src="truco-engine.js?v=20261125a"></script>
 <script src="poker.js?v=20261124b"></script>
 <!-- ao mudar truco-engine.js, poker.js ou carteira.js, troque o ?v= para o navegador baixar de novo -->
 <script src="carteira.js?v=20261124i"></script>
@@ -643,7 +643,7 @@ const {
   RANKS, SUITS, SUIT_SYM, RAISE_NAME, NEXT_VALUE, team,
   manilhaRank, isManilha, strength, cardLabel, randInt, newDeck,
   nextOfTeam, firstOfTeamFrom, nick, teamLabel, addLog,
-  deal, decideHand, endHand, playCard, canCallTruco, currentActor, lowestCardIndex,
+  deal, decideHand, endHand, playCard, canCallTruco, canRespond, currentActor, lowestCardIndex,
   applyAction, timeoutMove,
 } = TrucoEngine;
 
@@ -3072,11 +3072,16 @@ function render() {
     if (seated) btns += `<button class="danger" data-act="correr" data-confirm="Correr da mão? ${seated ? (st.n > 2 ? 'Eles levam' : 'O adversário leva') : ''} ${h.value} ${h.value === 1 ? 'tento' : 'tentos'}.">Correr (dá ${h.value})</button>`;
   } else if (st.phase === 'truco') {
     const p = h.pending;
-    if (seated && p.responder === me) {
-      msg = `<strong>${esc(nick(st, p.caller))}</strong> pediu ${RAISE_NAME[p.to].toLowerCase()}. Aceita valendo ${p.to}?`;
+    const correram = (p.runs || []).filter(s => s !== me);
+    if (seated && canRespond(st, me)) {
+      // em dupla, qualquer um aceita; o time só corre se os dois correrem
+      msg = correram.length
+        ? `<strong>${esc(correram.map(s => nick(st, s)).join(' e '))}</strong> quer correr do ${RAISE_NAME[p.to].toLowerCase()}. Você decide: aceita valendo ${p.to}?`
+        : `<strong>${esc(nick(st, p.caller))}</strong> pediu ${RAISE_NAME[p.to].toLowerCase()}. Aceita valendo ${p.to}?${st.n > 2 ? ' <span class="muted">(se um aceitar, está aceito; só corre se o time todo correr)</span>' : ''}`;
       btns = `<button class="primary" data-act="accept">Aceitar (${p.to})</button><button class="danger" data-act="run">Correr (dá ${h.value})</button>`;
       if (p.to < 12) btns += `<button class="shout" data-act="raise">${RAISE_NAME[NEXT_VALUE[p.to]]}!</button>`;
-    } else msg = `${esc(nick(st, p.caller))} pediu ${RAISE_NAME[p.to].toLowerCase()}. Esperando <strong>${esc(nick(st, p.responder))}</strong> responder.`;
+    } else if (seated && (p.runs || []).includes(me)) msg = `Você quer correr. Esperando <strong>${esc(nick(st, p.responder))}</strong> decidir: se ele aceitar, vale ${p.to}.`;
+    else msg = `${esc(nick(st, p.caller))} pediu ${RAISE_NAME[p.to].toLowerCase()}. Esperando ${st.n > 2 ? 'o outro time' : `<strong>${esc(nick(st, p.responder))}</strong>`} responder.`;
   } else if (st.phase === 'onze') {
     if (seated && h.onzeDecider === me) {
       msg = '<strong>Mão de onze.</strong> Olhe as cartas e decida pelo time.';
@@ -3248,7 +3253,7 @@ function animateTable(st, hk, me, prevHand) {
   if (pk && pk !== anim.pending && !fresh) {
     shout(`${RAISE_NAME[p.to]}!`, `${nick(st, p.caller)} pediu`, '', $app.querySelector('.mesa .banner'));
     anim.resp = p.responder;
-    if (me >= 0 && p.responder === me && navigator.vibrate) navigator.vibrate([90, 50, 90]);
+    if (me >= 0 && canRespond(st, me) && navigator.vibrate) navigator.vibrate([90, 50, 90]);
   } else if (!fresh && anim.phase === 'truco' && st.phase !== 'truco' && anim.pending && anim.pending.startsWith(hk + '|')) {
     // resposta: aceitou ou correu
     const at = seatAnchor(st, anim.resp);

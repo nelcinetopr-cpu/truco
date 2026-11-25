@@ -139,6 +139,13 @@
     return st.phase === 'play' && h.turn === seat && !h.ferro && h.onzeTeam < 0 && h.value < 12 && h.lastRaise !== team(seat);
   }
 
+  // Truco pedido: qualquer um do time que responde pode aceitar ou aumentar; o time só corre
+  // quando todos dele correrem (em dupla, os dois). p.runs = cadeiras que já correram.
+  function canRespond(st, seat) {
+    const h = st.hand, p = h && h.pending;
+    return st.phase === 'truco' && !!p && seat >= 0 && seat < st.n && team(seat) !== p.by && !(p.runs || []).includes(seat);
+  }
+
   // Quem precisa agir agora, ou -1. Na hora de dar as cartas é o próximo a dar.
   function currentActor(st) {
     const h = st.hand;
@@ -178,18 +185,28 @@
         addLog(st, `${nick(st, seat)} pediu ${RAISE_NAME[h.pending.to].toLowerCase()}!`);
         return true;
       case 'accept':
-        if (st.phase !== 'truco' || p.responder !== seat) return false;
+        if (!canRespond(st, seat)) return false;
         h.value = p.to; h.lastRaise = p.by; h.pending = null; st.phase = 'play';
         addLog(st, `${nick(st, seat)} aceitou. Valendo ${h.value}.`);
         return true;
-      case 'run':
-        if (st.phase !== 'truco' || p.responder !== seat) return false;
-        addLog(st, `${nick(st, seat)} correu.`);
+      case 'run': {
+        if (!canRespond(st, seat)) return false;
+        p.runs = [...(p.runs || []), seat];
+        // ainda tem parceiro que não decidiu: a resposta fica com ele
+        const falta = [];
+        for (let s = 0; s < st.n; s++) if (team(s) !== p.by && !p.runs.includes(s)) falta.push(s);
+        if (falta.length) {
+          addLog(st, `${nick(st, seat)} quer correr. Falta ${nick(st, falta[0])} decidir.`);
+          if (p.responder === seat) p.responder = falta.includes(nextOfTeam(seat, team(seat), st.n)) ? nextOfTeam(seat, team(seat), st.n) : falta[0];
+          return true;
+        }
+        addLog(st, st.n === 2 ? `${nick(st, seat)} correu.` : `${teamLabel(team(seat))} correu (todos correram).`);
         endHand(st, p.by, h.value, 'o outro time correu');
         st.result.correu = true; // quem pediu pode mostrar as cartas
         return true;
+      }
       case 'raise':
-        if (st.phase !== 'truco' || p.responder !== seat || p.to >= 12) return false;
+        if (!canRespond(st, seat) || p.to >= 12) return false;
         h.value = p.to; h.lastRaise = p.by;
         h.pending = { to: NEXT_VALUE[p.to], by: team(seat), caller: seat, responder: p.caller };
         addLog(st, `${nick(st, seat)} pediu ${RAISE_NAME[h.pending.to].toLowerCase()}!`);
@@ -264,7 +281,7 @@
     RANKS, SUITS, SUIT_SYM, RAISE_NAME, NEXT_VALUE, team,
     manilhaRank, isManilha, strength, cardLabel, randInt, newDeck,
     nextOfTeam, firstOfTeamFrom, nick, teamLabel, addLog,
-    deal, decideHand, endHand, playCard, canCallTruco, currentActor, lowestCardIndex,
+    deal, decideHand, endHand, playCard, canCallTruco, canRespond, currentActor, lowestCardIndex,
     applyAction, timeoutMove,
   };
 });
