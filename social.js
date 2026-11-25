@@ -86,8 +86,8 @@ async function responderDupla(lider, aceitar) { const r = await callServer('fila
 function renderJogar() {
   const el = document.getElementById('jogarPanel'); if (!el) return;
   clearInterval(soc.relogio); soc.relogio = null;
-  const titulo = '<h2>Jogar agora</h2>';
-  if (!account) { el.innerHTML = `${titulo}<p class="muted">Entre com sua conta para procurar uma partida.</p>`; return; }
+  const titulo = '<h2>Jogar agora</h2><p class="hero-sub">Escolha o modo e o valor. O site acha os jogadores e a partida começa sozinha.</p>';
+  if (!account) { el.innerHTML = `${titulo}<p class="muted" style="margin:0">Entre com sua conta (logo acima) para procurar uma partida.</p>`; return; }
   const me = account.key, g = meuGrupo(), valor = v => (v ? `R$ ${v}` : 'grátis');
   if (g && g.status === 'convite' && g.lider !== me) {
     el.innerHTML = `${titulo}<div class="jg-box"><p><b>${esc(g.names[g.lider] || g.lider)}</b> te chamou para jogar em dupla: <b>${MODOS[g.n]}</b>, entrada <b>${valor(g.stake)}</b>.</p>
@@ -109,14 +109,14 @@ function renderJogar() {
     if (soc.parceiro && !amigos.includes(soc.parceiro)) soc.parceiro = '';
     el.innerHTML = `${titulo}
       <div class="seg" role="tablist" aria-label="Modo">${[2, 4, 6].map(n => `<button type="button" role="tab" aria-selected="${soc.n === n}" data-jgn="${n}">${MODOS[n]}</button>`).join('')}</div>
-      <div class="row" style="margin-top:10px">
-        <label style="flex:1 1 130px">Entrada por jogador<select id="jgStake">${CHIP_VALUES.map(v => `<option value="${v}" ${v === soc.stake ? 'selected' : ''}>${v ? `R$ ${v}` : 'Grátis'}</option>`).join('')}</select></label>
-        ${soc.n > 2 ? `<label style="flex:2 1 170px">Parceiro<select id="jgParceiro"><option value="">Sozinho (o site acha um parceiro)</option>${amigos.map(k => `<option value="${esc(k)}" ${k === soc.parceiro ? 'selected' : ''}>${amigoOnline(k) ? '● ' : ''}${esc(nomeAmigo(k))}</option>`).join('')}</select></label>` : ''}
+      <div class="jg-opts">
+        <div><span class="jg-rot" id="jgStakeRot">Entrada por jogador</span><div class="jg-chips" role="group" aria-labelledby="jgStakeRot">${CHIP_VALUES.map(v => `<button type="button" data-jgv="${v}" aria-pressed="${v === soc.stake}">${v ? `R$ ${v}` : 'Grátis'}</button>`).join('')}</div></div>
+        ${soc.n > 2 ? `<label>Parceiro<select id="jgParceiro"><option value="">Sozinho (o site acha um parceiro)</option>${amigos.map(k => `<option value="${esc(k)}" ${k === soc.parceiro ? 'selected' : ''}>${amigoOnline(k) ? '● ' : ''}${esc(nomeAmigo(k))}</option>`).join('')}</select></label>` : ''}
       </div>
-      <div class="row"><button class="primary" id="jgBuscar">${soc.n > 2 && soc.parceiro ? 'Chamar amigo e procurar' : 'Procurar partida'}</button></div>
-      <p class="muted" style="font-size:13px;margin:0">O site junta você com quem está procurando o mesmo modo e valor e a partida começa sozinha.${soc.n > 2 ? ' Com um amigo, vocês ficam no mesmo time.' : ''}</p>`;
+      <button class="botao-hero" id="jgBuscar">${soc.n > 2 && soc.parceiro ? 'Chamar amigo e procurar' : 'Procurar partida'}</button>
+      ${soc.n > 2 ? '<p class="muted" style="font-size:13px;margin:0">Com um amigo, vocês ficam no mesmo time.</p>' : ''}`;
     el.querySelectorAll('[data-jgn]').forEach(b => (b.onclick = () => { soc.n = +b.dataset.jgn; salvaPrefs(); renderJogar(); }));
-    document.getElementById('jgStake').onchange = e => { soc.stake = +e.target.value; salvaPrefs(); };
+    el.querySelectorAll('[data-jgv]').forEach(b => (b.onclick = () => { soc.stake = +b.dataset.jgv; salvaPrefs(); el.querySelectorAll('[data-jgv]').forEach(x => x.setAttribute('aria-pressed', String(x === b))); }));
     const pc = document.getElementById('jgParceiro'); if (pc) pc.onchange = e => { soc.parceiro = e.target.value; salvaPrefs(); renderJogar(); };
     document.getElementById('jgBuscar').onclick = procurar;
   }

@@ -76,7 +76,7 @@ select { max-width: 100%; }
 input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
 /* no celular o "hover" fica preso depois do toque: só usa hover onde tem mouse, e nunca nas cartas */
 @media (hover: hover) {
-  button:not(.card):hover:not(:disabled) { background: #1d5a43; }
+  button:not(.card):hover:not(:disabled) { background: #f0bf5c; }
   button.primary:hover:not(:disabled) { background: #f0bf5c; }
   button.danger:hover:not(:disabled) { background: #6e2820; }
   button.shout:hover:not(:disabled) { background: #cc3b31; }
@@ -86,7 +86,7 @@ button.card { -webkit-appearance: none; appearance: none; -webkit-tap-highlight-
 button.card.red { color: var(--red); }
 button {
   font: inherit; font-weight: 800; cursor: pointer; border-radius: 10px; padding: 10px 16px;
-  border: 1px solid var(--line); background: #164a37; color: var(--text);
+  border: 1px solid #b8862c; background: var(--brass); color: #000;
 }
 
 button:disabled { opacity: .45; cursor: not-allowed; }
@@ -430,6 +430,22 @@ details summary { cursor: pointer; font-weight: 800; }
 details ul { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 4px; color: var(--muted); font-size: 14px; }
 #toast { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: #2a1a05; color: #f7e2b5; border: 1px solid var(--brass); padding: 10px 16px; border-radius: 10px; font-weight: 600; max-width: calc(100% - 32px); }
 /* música de fundo: botão redondo fixo no canto de baixo à esquerda */
+.hero-jogar { position: relative; gap: 14px; padding: 20px; border: 2px solid var(--brass); border-radius: 18px;
+  background: linear-gradient(160deg, #0b281e, color-mix(in srgb, #0b281e 70%, var(--brass)));
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--brass) 22%, transparent), 0 14px 30px rgba(0,0,0,.35); }
+.hero-jogar > h2 { font-size: clamp(28px, 6vw, 38px); color: var(--brass); line-height: 1.05; }
+.hero-jogar .hero-sub { margin: 0; color: var(--text); font-size: 14.5px; max-width: 62ch; }
+.hero-jogar .seg { background: var(--felt-deep); }
+.hero-jogar .seg button { font-size: 16px; padding: 10px 6px; }
+.jg-opts { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); align-items: end; }
+.jg-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.jg-chips button { padding: 8px 13px; border-radius: 999px; font-size: 14px; background: var(--felt-deep); color: var(--text); border: 1px solid var(--line); }
+.jg-chips button[aria-pressed="true"] { background: var(--brass); color: #1a1206; border-color: transparent; }
+@media (hover: hover) { .jg-chips button:not([aria-pressed="true"]):hover:not(:disabled) { background: #164a37; } }
+.jg-rot { display: block; font-size: 12px; letter-spacing: 1px; text-transform: uppercase; font-weight: 800; color: var(--muted); margin-bottom: 6px; }
+button.botao-hero { width: 100%; padding: 16px 18px; border-radius: 14px; font-family: var(--display); font-weight: 400; font-size: 24px; letter-spacing: .5px;
+  background: var(--brass); color: #1a1206; border: 0; box-shadow: 0 6px 0 #8a6420, 0 10px 22px rgba(0,0,0,.35); }
+button.botao-hero:active:not(:disabled) { transform: translateY(3px); box-shadow: 0 3px 0 #8a6420, 0 6px 14px rgba(0,0,0,.35); }
 .jg-box { padding: 12px 14px; border-radius: 12px; background: var(--felt-deep); border: 1px solid var(--line); }
 .jg-box p { margin: 0 0 8px; }
 .jg-busca { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-weight: 600; }
@@ -579,6 +595,9 @@ details.fold[open] { padding-bottom: 12px; }
 .top-cart { display: inline-flex; gap: 6px; align-items: center; }
 .top-cart:empty { display: none; }
 .top-saldo { font-weight: 800; color: var(--brass); font-variant-numeric: tabular-nums; }
+/* saldo no topo: fundo escuro e texto claro (editor de layout), não o dourado dos botões comuns */
+button.top-saldo, .top-saldo button { background: var(--felt-deep); color: var(--text); border-color: var(--line); }
+@media (hover: hover) { button.top-saldo:hover:not(:disabled), .top-saldo button:hover:not(:disabled) { background: #164a37; } }
 .convite-hero { display: grid; gap: 2px; padding: 14px 16px; border-radius: 12px; background: linear-gradient(135deg, #4a3410 0%, var(--felt-deep) 75%); border: 1px solid #7a5a1f; }
 .convite-hero > b { font-family: var(--display); font-weight: 400; font-size: 24px; color: var(--brass); }
 .convite-hero span { font-size: 14px; }
@@ -634,7 +653,7 @@ details.fold[open] { padding-bottom: 12px; }
 <script src="poker.js?v=20261124b"></script>
 <!-- ao mudar truco-engine.js, poker.js ou carteira.js, troque o ?v= para o navegador baixar de novo -->
 <script src="carteira.js?v=20261124i"></script>
-<script src="social.js?v=20261124a"></script>
+<script src="social.js?v=20261125a"></script>
 <script>
 /* =========================================================
    REGRAS — vêm do arquivo truco-engine.js (o mesmo que roda no servidor e nos testes)
@@ -1211,10 +1230,13 @@ function showLobby() {
   const rulesEl = $app.lastElementChild;
   rulesEl.insertAdjacentHTML('beforebegin', `<section class="panel" id="photoPanel"></section>`);
   // carteira (saldo, depósito Pix e saque) e o banco da organização, logo no começo do saguão
-  document.getElementById('podium').parentElement.insertAdjacentHTML('beforebegin', `<div class="grid2"><div class="stack"><section class="panel" id="walletPanel"></section><section class="panel" id="invitePanel" hidden></section></div><section class="panel" id="bankAdmin" hidden></section></div>`);
-  document.getElementById('podium').parentElement.insertAdjacentHTML('beforebegin', `<div class="grid2"><section class="panel" id="tourPanel"></section><section class="panel" id="orgPanel"></section></div>`);
-  document.getElementById('podium').parentElement.insertAdjacentHTML('afterend', `<section class="panel" id="profitPanel"></section>`);
-  document.getElementById('create').closest('.grid2').insertAdjacentHTML('beforebegin', `<div class="grid2"><section class="panel" id="jogarPanel"></section><section class="panel" id="amigosPanel"></section></div>`);
+  // ordem do saguão (editor de layout): Jogar agora em destaque no topo; Amigos e Carteira;
+  // Criar e Entrar numa mesa; Convite e Torneios; rankings; por último a organização
+  const criarGrid = document.getElementById('create').closest('.grid2'), rankGrid = document.getElementById('podium').parentElement;
+  criarGrid.insertAdjacentHTML('beforebegin', `<section class="panel hero-jogar" id="jogarPanel"></section>
+    <div class="grid2"><section class="panel" id="amigosPanel"></section><section class="panel" id="walletPanel"></section></div>`);
+  criarGrid.insertAdjacentHTML('afterend', `<div class="grid2"><section class="panel" id="invitePanel" hidden></section><section class="panel" id="tourPanel"></section></div>`);
+  rankGrid.insertAdjacentHTML('afterend', `<section class="panel" id="profitPanel"></section><div class="grid2"><section class="panel" id="bankAdmin" hidden></section><section class="panel" id="orgPanel"></section></div>`);
   if (typeof renderJogar === 'function') { renderJogar(); renderAmigos(); }
   renderProfit(); renderPhotoPanel(); renderTourPanel(); renderOrgPanel();
   if (typeof loadCarteira === 'function') loadCarteira();
