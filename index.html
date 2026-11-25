@@ -211,6 +211,9 @@ body.in-game .score { padding: 6px 10px; }
 body.in-game .score b { font-size: 24px; }
 body.in-game .mesa { flex: 1 1 0; min-height: 140px; aspect-ratio: auto; }
 body.in-game .actions { flex: none; gap: 6px; }
+/* botões da jogada (Truco, Correr, Aceitar…) embaixo das cartas, com um espaço a mais */
+.botoes-jogo { margin-top: 6px; }
+body.in-game .botoes-jogo { margin-top: 8px; padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)); }
 body.in-game .hand { flex: none; min-height: 0; flex-wrap: nowrap; gap: 10px; }
 body.in-game .hand .card { width: min(92px, 20vw, 12dvh); font-size: clamp(12px, 2.4dvh, 19px); }
 body.in-game .played .card { width: min(64px, 8.5vw, 8dvh); }
@@ -1889,16 +1892,18 @@ const SINAIS = [
   ['3', '3', 'Três', ''], ['2', '2', 'Dois', ''], ['A', 'A', 'Ás', ''], ['nada', '✋', 'Nada', 'não tenho nada'], ['cheio', '💯', 'Cheio', 'mão cheia'],
 ];
 const sinalInfo = k => SINAIS.find(x => x[0] === k) || [k, '?', k, ''];
-let trayAberta = null, ultimoSinal = null, unsubSinal = null, sinalAbertoEm = 0, lastReacao = 0;
+let trayAberta = null, ultimoSinal = null, unsubSinal = null, sinalAbertoEm = 0, lastReacao = 0, botSinalHid = null;
+const sinaisRec = {}; // quem mandou -> último sinal dele
 const temParceiro = (st, me) => me >= 0 && st.n > 2;
 function reacoesHtml(st, me) {
-  if (!canChat()) return '';
+  const pode = solo ? !!(st.hand && st.phase !== 'gameEnd') : canChat();
+  if (!pode) return '';
   const tray = trayAberta === 'emoji'
     ? `<div class="tray" role="group" aria-label="Emojis">${EMOJIS.map(e => `<button type="button" data-emoji="${e}" aria-label="Mandar ${e}">${e}</button>`).join('')}</div>`
     : trayAberta === 'sinal'
       ? `<div class="tray sinais" role="group" aria-label="Sinais para o parceiro"><p>Só o seu parceiro vê</p>${SINAIS.map(([k, sym, nome, dica]) => `<button type="button" data-sinal="${k}" title="${esc(dica || nome)}"><b>${sym}</b><small>${esc(nome)}</small></button>`).join('')}</div>`
       : '';
-  return `<div class="mtools">${tray}${voiceOK() ? '<button type="button" class="ptt rbtn" data-ptt aria-label="Segure para falar com a mesa">🎤</button>' : ''}
+  return `<div class="mtools">${tray}${voiceOK() && !solo ? '<button type="button" class="ptt rbtn" data-ptt aria-label="Segure para falar com a mesa">🎤</button>' : ''}
     <button type="button" class="rbtn ${trayAberta === 'emoji' ? 'on' : ''}" data-tray="emoji" aria-label="Emojis" aria-expanded="${trayAberta === 'emoji'}">😀</button>
     ${temParceiro(st, me) ? `<button type="button" class="rbtn sinal-btn ${trayAberta === 'sinal' ? 'on' : ''}" data-tray="sinal" aria-label="Sinal para o parceiro" aria-expanded="${trayAberta === 'sinal'}">🤫</button>` : ''}</div>`;
 }
@@ -1908,6 +1913,7 @@ function bindReacoes() {
   document.querySelectorAll('[data-sinal]').forEach(b => (b.onclick = () => { trayAberta = null; mandarSinal(b.dataset.sinal); render(); }));
 }
 async function mandarEmoji(e) {
+  if (solo) return showSpeech(myId, e); // treino: só na tela
   if (!canChat()) return;
   if (Date.now() - lastReacao < 800) return toast('Calma, um de cada vez.');
   lastReacao = Date.now();
@@ -1917,6 +1923,13 @@ async function mandarEmoji(e) {
 async function mandarSinal(k) {
   if (Date.now() - lastReacao < 800) return toast('Calma, um de cada vez.');
   lastReacao = Date.now();
+  if (solo) {
+    // treino: o robô parceiro "recebe" e responde com o sinal das cartas dele
+    const [, sym, nome] = sinalInfo(k);
+    toast(`Sinal mandado para o parceiro: ${sym} ${nome}. Ele vai responder com o dele.`, 3000);
+    setTimeout(() => botSinais(true), 1300);
+    return;
+  }
   const r = await callServer('trucoSinal', { code, sinal: k });
   if (r) { const [, sym, nome] = sinalInfo(k); toast(`Sinal mandado para o parceiro: ${sym} ${nome}`, 2500); }
 }
@@ -1929,7 +1942,7 @@ function startSinais(c) {
     const d = s.exists ? s.data() : null;
     if (!d || !d.at || (ultimoSinal && ultimoSinal.at === d.at)) return;
     const novo = d.at >= sinalAbertoEm - 60000;
-    ultimoSinal = d;
+    ultimoSinal = d; sinaisRec[d.de] = d;
     if (novo && Date.now() - d.at < 120000) {
       const [, sym, nome] = sinalInfo(d.sinal);
       showSpeech(d.de, `🤫 ${sym} ${nome}`, true);
@@ -1938,12 +1951,35 @@ function startSinais(c) {
     if (cur) render();
   }, () => {});
 }
-function stopSinais() { if (unsubSinal) unsubSinal(); unsubSinal = null; ultimoSinal = null; trayAberta = null; }
+function stopSinais() { if (unsubSinal) unsubSinal(); unsubSinal = null; ultimoSinal = null; trayAberta = null; for (const k in sinaisRec) delete sinaisRec[k]; }
 function sinalTag(key, h) {
-  const d = ultimoSinal;
-  if (!d || !key || d.de !== key || !h || (d.hid && h.hid && d.hid !== h.hid)) return '';
+  const d = key && sinaisRec[key];
+  if (!d || !h || (d.hid && h.hid && d.hid !== h.hid)) return '';
   const [, sym, nome] = sinalInfo(d.sinal);
   return `<span class="sinal-tag" title="Sinal que só você vê">🤫 ${sym} ${esc(nome)}</span>`;
+}
+
+// TREINO: o robô parceiro faz o sinal de verdade das cartas que tem (no começo de cada mão
+// e quando você manda um sinal para ele), para dar para testar os sinais sozinho.
+const NAIPE_SINAL = { p: 'zap', c: 'copas', e: 'espadilha', o: 'picafumo' };
+function sinalDasCartas(cartas, vira) {
+  const manilhas = cartas.filter(c => isManilha(c, vira));
+  if (manilhas.length >= 2) return 'cheio';
+  if (manilhas.length === 1) return NAIPE_SINAL[manilhas[0][1]] || 'nada';
+  for (const r of ['3', '2', 'A']) if (cartas.some(c => c[0] === r)) return r;
+  return 'nada';
+}
+function botSinais() {
+  const st = cur; if (!solo || !st || !st.hand || st.phase === 'gameEnd') return;
+  const me = st.seats.indexOf(myId); if (me < 0 || st.n <= 2) return;
+  for (let s = 0; s < st.n; s++) {
+    if (s === me || team(s) !== team(me)) continue;
+    const key = st.seats[s], sinal = sinalDasCartas(st.hand.hands[s] || [], st.hand.vira);
+    sinaisRec[key] = { de: key, nome: nick(st, s), sinal, hid: st.hand.hid, at: Date.now() };
+    const [, sym, nome] = sinalInfo(sinal);
+    showSpeech(key, `🤫 ${sym} ${nome}`, true);
+  }
+  render();
 }
 
 // Balão de fala: a mensagem aparece em cima da foto de quem mandou, por 3 segundos.
@@ -3267,9 +3303,10 @@ function render() {
       <div class="mesa ${st.n === 6 ? 'six' : ''}">${viraHtml}${seatsHtml}${playedHtml}${lastTrick}${handResult}${banner}${endPop}
         ${seated ? (() => { const p = pos(me, [40, 40]); return `<div class="seat us me ${me === actor ? 'turn' : ''}" data-key="${esc(st.seats[me] || '')}" style="left:${p.x}%;top:${Math.min(p.y, 90)}%">${avatarHtml(st.seats[me], nick(st, me))}<span class="name">${esc(nick(st, me))} (você)</span></div>`; })() : ''}
       </div>
-      ${solo ? '' : reacoesHtml(st, me)}
-      <div class="actions"><p class="msg">${!solo && currentActor(st) >= 0 && st.turnAt ? `<span id="clock" class="clock ${timeLeft(st) <= 5 ? 'low' : ''}">${timeLeft(st)}s</span> ` : ''}${msg}</p><div class="row" style="justify-content:center">${btns}</div></div>
+      ${reacoesHtml(st, me)}
+      <div class="actions"><p class="msg">${!solo && currentActor(st) >= 0 && st.turnAt ? `<span id="clock" class="clock ${timeLeft(st) <= 5 ? 'low' : ''}">${timeLeft(st)}s</span> ` : ''}${msg}</p></div>
       ${handHtml}
+      ${btns ? `<div class="actions botoes-jogo"><div class="row" style="justify-content:center">${btns}</div></div>` : ''}
       ${partnerHtml}
     </div>
     <aside class="side">${tableBar}${ledgerHtml(st)}</aside>
@@ -3279,6 +3316,7 @@ function render() {
   if (canChat()) { if (!vz || vz.code !== code) startVoice(code); } else if (vz) stopVoice();
   bindChat();
   bindReacoes();
+  if (solo && st.n > 2 && h && h.hid && st.phase === 'play' && botSinalHid !== h.hid) { botSinalHid = h.hid; setTimeout(botSinais, 1600); }
   renderPayments();
   maybeShowPayOverlay(st);
 
