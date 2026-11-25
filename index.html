@@ -489,6 +489,11 @@ button.botao-hero:active:not(:disabled) { transform: translateY(3px); box-shadow
 @keyframes onlinePulse { 0% { box-shadow: 0 0 0 0 rgba(61,220,132,.55); } 70% { box-shadow: 0 0 0 7px rgba(61,220,132,0); } 100% { box-shadow: 0 0 0 0 rgba(61,220,132,0); } }
 @media (prefers-reduced-motion: reduce) { .online-pill .dot { animation: none; } }
 @media (max-width: 699px) { body.in-game .online-pill { display: none; } }
+/* Suporte: canto de baixo, à esquerda; abre o bot do Telegram da organização */
+.suporte-pill { position: fixed; z-index: 30; left: max(12px, env(safe-area-inset-left, 0px)); bottom: calc(12px + env(safe-area-inset-bottom, 0px)); display: flex; align-items: center; gap: 6px; padding: 7px 13px; border-radius: 999px; background: #229ED9; color: #fff; font-size: 13px; font-weight: 700; text-decoration: none; box-shadow: 0 4px 14px rgba(0,0,0,.35); }
+.suporte-pill:hover { filter: brightness(1.08); }
+.suporte-pill svg { width: 16px; height: 16px; fill: currentColor; }
+@media (max-width: 699px) { body.in-game .suporte-pill { display: none; } }
 .music { position: fixed; z-index: 30; left: max(12px, env(safe-area-inset-left, 0px)); bottom: calc(12px + env(safe-area-inset-bottom, 0px)); display: flex; gap: 6px; }
 .music[hidden] { display: none; }
 .music button { width: 40px; height: 40px; padding: 0; border-radius: 50%; display: grid; place-items: center; font-size: 17px; background: #164a37; border: 1px solid var(--line); box-shadow: 0 4px 12px rgba(0,0,0,.45); opacity: .85; }
@@ -678,6 +683,7 @@ button.top-saldo, .top-saldo button { background: var(--felt-deep); color: var(-
   <main id="app"><p class="muted">Abrindo a mesa…</p></main>
 </div>
 <div id="toast" hidden></div>
+<a id="suportePill" class="suporte-pill" href="#" target="_blank" rel="noopener" title="Falar com o suporte pelo Telegram" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.8 15.4l-.4 5.3c.6 0 .8-.3 1.1-.6l2.6-2.5 5.4 4c1 .5 1.7.3 2-.9l3.6-17c.3-1.5-.6-2.1-1.6-1.7L1.3 9.9c-1.4.6-1.4 1.4-.2 1.8l5.4 1.7L19 5.5c.6-.4 1.1-.2.7.2z"/></svg>Suporte</a>
 <div id="onlinePill" class="online-pill" role="status" aria-live="polite" hidden><span class="dot" aria-hidden="true"></span><span id="onlineN"></span></div>
 
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
@@ -1028,7 +1034,7 @@ async function init() {
     setNotice('Modo de teste local: o Firebase ainda não foi configurado, então os dados ficam só neste navegador. Abra outras abas para simular os outros jogadores.');
   }
   startPayments();
-  if (!localMode) startOnline();
+  if (!localMode) { startOnline(); startSuporte(); }
   if (typeof startSocial === 'function') startSocial();
   const h = location.hash.replace('#', '').toUpperCase();
   // link do aviso de saque no WhatsApp: abre o saguão com aquele saque em destaque no Banco
@@ -1075,6 +1081,23 @@ function startOnline() {
   // a cada minuto: marca presença e refaz a consulta (quem parou de marcar sai da conta)
   online.t = setInterval(() => { onlineBeat(); onlineWatch(); }, 60 * 1000);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { onlineBeat(); onlinePaint(); } });
+}
+/* ---------- suporte pelo Telegram ----------
+   O servidor publica o nome do bot em publico/suporte. O botão abre t.me/<bot>?start=suporte_<conta>:
+   a pessoa escreve no bot, a organização recebe no Telegram dela e responde por lá. */
+let suporteBot = null;
+function suporteLink() {
+  const k = account && /^[A-Za-z0-9_-]{1,40}$/.test(account.key) ? '_' + account.key : '';
+  return `https://t.me/${suporteBot}?start=suporte${k}`;
+}
+function startSuporte() {
+  const el = document.getElementById('suportePill'); if (!el) return;
+  el.onclick = () => { el.href = suporteLink(); };
+  firebase.firestore().doc('publico/suporte').get().then(s => {
+    const b = s.exists && s.data().bot;
+    if (!b || !/^[A-Za-z0-9_]{3,40}$/.test(b)) return;
+    suporteBot = b; el.href = suporteLink(); el.hidden = false;
+  }).catch(() => {});
 }
 function stopOnlineMe() { const r = onlineRef(); if (r) r.delete().catch(() => {}); }
 
