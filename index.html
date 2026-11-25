@@ -304,6 +304,10 @@ body.in-game .mtools { display: flex; }
 .seat .speech.emoji { font-size: 30px; padding: 4px 10px; background: transparent; box-shadow: none; }
 .seat .speech.emoji::after { display: none; }
 .seat .speech.sinal { background: #3a2a10; color: #ffe2a3; border: 1px solid var(--brass); }
+/* balão/emoji sempre na frente das cartas jogadas */
+.seat:has(.speech) { z-index: 30; }
+/* sinal do parceiro: emoji grande, com um brilho dourado (só você vê) */
+.seat .speech.sinal.emoji { background: transparent; border: 0; font-size: 34px; filter: drop-shadow(0 0 6px rgba(240, 190, 80, .95)) drop-shadow(0 2px 4px rgba(0,0,0,.6)); }
 .seat .speech.sinal::after { border-top-color: #3a2a10; }
 .seat .speech.sinal.below::after { border-top-color: transparent; border-bottom-color: #3a2a10; }
 .sinal-tag { font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: 999px; background: #3a2a10; color: #ffe2a3; border: 1px solid var(--brass); white-space: nowrap; }
@@ -1888,8 +1892,8 @@ function onNewChat(fresh) {
    O sinal fica marcado na cadeira de quem fez até o fim da mão. */
 const EMOJIS = ['😂', '😎', '😡', '😭', '😱', '🤔', '👏', '🔥', '🙏', '🤫', '💪', '🍀'];
 const SINAIS = [
-  ['zap', '♣', 'Zap', 'manilha de paus'], ['copas', '♥', 'Copas', 'manilha de copas'], ['espadilha', '♠', 'Espadilha', 'manilha de espadas'], ['picafumo', '♦', 'Pica-fumo', 'manilha de ouros'],
-  ['3', '3', 'Três', ''], ['2', '2', 'Dois', ''], ['A', 'A', 'Ás', ''], ['nada', '✋', 'Nada', 'não tenho nada'], ['cheio', '💯', 'Cheio', 'mão cheia'],
+  ['zap', '♣️', 'Zap', 'manilha de paus'], ['copas', '♥️', 'Copas', 'manilha de copas'], ['espadilha', '♠️', 'Espadilha', 'manilha de espadas'], ['picafumo', '♦️', 'Pica-fumo', 'manilha de ouros'],
+  ['3', '3️⃣', 'Três', ''], ['2', '2️⃣', 'Dois', ''], ['A', '🅰️', 'Ás', ''], ['nada', '✋', 'Nada', 'não tenho nada'], ['cheio', '💯', 'Cheio', 'mão cheia'],
 ];
 const sinalInfo = k => SINAIS.find(x => x[0] === k) || [k, '?', k, ''];
 let trayAberta = null, ultimoSinal = null, unsubSinal = null, sinalAbertoEm = 0, lastReacao = 0, botSinalHid = null;
@@ -1945,7 +1949,7 @@ function startSinais(c) {
     ultimoSinal = d; sinaisRec[d.de] = d;
     if (novo && Date.now() - d.at < 120000) {
       const [, sym, nome] = sinalInfo(d.sinal);
-      showSpeech(d.de, `🤫 ${sym} ${nome}`, true);
+      showSpeech(d.de, sym, true);
       if (navigator.vibrate) navigator.vibrate(40);
     }
     if (cur) render();
@@ -1956,7 +1960,7 @@ function sinalTag(key, h) {
   const d = key && sinaisRec[key];
   if (!d || !h || (d.hid && h.hid && d.hid !== h.hid)) return '';
   const [, sym, nome] = sinalInfo(d.sinal);
-  return `<span class="sinal-tag" title="Sinal que só você vê">🤫 ${sym} ${esc(nome)}</span>`;
+  return `<span class="sinal-tag" title="Sinal que só você vê: ${esc(nome)}">🤫 ${sym}</span>`;
 }
 
 // TREINO: o robô parceiro faz o sinal de verdade das cartas que tem (no começo de cada mão
@@ -1977,7 +1981,7 @@ function botSinais() {
     const key = st.seats[s], sinal = sinalDasCartas(st.hand.hands[s] || [], st.hand.vira);
     sinaisRec[key] = { de: key, nome: nick(st, s), sinal, hid: st.hand.hid, at: Date.now() };
     const [, sym, nome] = sinalInfo(sinal);
-    showSpeech(key, `🤫 ${sym} ${nome}`, true);
+    showSpeech(key, sym, true);
   }
   render();
 }
@@ -2000,7 +2004,7 @@ function applySpeech() {
     if (!b) { b = document.createElement('div'); b.className = 'speech'; b.setAttribute('role', 'status'); el.prepend(b); }
     b.textContent = s.text;
     b.classList.toggle('sinal', !!s.privado);
-    b.classList.toggle('emoji', !s.privado && [...s.text].length <= 2);
+    b.classList.toggle('emoji', [...s.text].length <= 3);
     const mesa = el.closest('.mesa');
     // na metade de cima da mesa o balão vai para baixo, para não sair da mesa
     const below = mesa && (el.offsetTop + el.offsetHeight / 2) < mesa.clientHeight * 0.45;
