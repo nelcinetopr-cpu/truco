@@ -1927,15 +1927,15 @@ async function mandarEmoji(e) {
 async function mandarSinal(k) {
   if (Date.now() - lastReacao < 800) return toast('Calma, um de cada vez.');
   lastReacao = Date.now();
+  const [, sym] = sinalInfo(k);
   if (solo) {
-    // treino: o robô parceiro "recebe" e responde com o sinal das cartas dele
-    const [, sym, nome] = sinalInfo(k);
-    toast(`Sinal mandado para o parceiro: ${sym} ${nome}. Ele vai responder com o dele.`, 3000);
-    setTimeout(() => botSinais(true), 1300);
+    // treino: aparece em cima de você; o robô parceiro "recebe" e responde com o sinal das cartas dele
+    showSpeech(myId, sym, true);
+    setTimeout(() => botSinais(true), 1600);
     return;
   }
   const r = await callServer('trucoSinal', { code, sinal: k });
-  if (r) { const [, sym, nome] = sinalInfo(k); toast(`Sinal mandado para o parceiro: ${sym} ${nome}`, 2500); }
+  if (r) showSpeech(myId, sym, true); // em cima de você (o parceiro vê o mesmo em cima de você; os adversários não)
 }
 // recebe o sinal do parceiro (só eu leio o meu documento)
 function startSinais(c) {
