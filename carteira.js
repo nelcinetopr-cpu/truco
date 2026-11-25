@@ -62,15 +62,9 @@ function paintTopCarteira() {
     <button type="button" class="small primary" data-topsheet="depositar">Depositar</button>
     <button type="button" class="small" data-topsacar>Sacar</button>`;
   el.querySelectorAll('[data-topsheet]').forEach(b => (b.onclick = () => abrirSheet(b.dataset.topsheet)));
-  // Sacar: abre a carteira já na parte de saque
+  // Sacar: abre a janela de saque (como o Depositar), sem precisar ir até a Carteira
   const sq = el.querySelector('[data-topsacar]');
-  if (sq) sq.onclick = () => {
-    const p = document.getElementById('walletPanel'); if (!p) return;
-    cart.tab = 'sacar'; try { localStorage.setItem('truco.carteiraTab', 'sacar'); } catch {}
-    if (!cart.aberta) cart.aberta = true;
-    renderCarteira();
-    p.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  };
+  if (sq) sq.onclick = () => abrirSheet('sacar');
   const w = el.querySelector('[data-topwallet]');
   if (w) w.onclick = () => {
     const p = document.getElementById('walletPanel'); if (!p) return;
@@ -133,7 +127,7 @@ function renderConvite() {
   if (digitado) document.getElementById('indCod').value = digitado;
 }
 
-// janela por cima da página: Depositar
+// janela por cima da página: Depositar, Sacar ou Convidar
 function abrirSheet(qual) {
   cart.sheet = qual;
   renderSheet();
@@ -160,12 +154,13 @@ function renderSheet() {
     document.body.appendChild(ov);
     document.addEventListener('keydown', escSheet);
   }
-  const r = cart.r, dep = cart.sheet === 'depositar';
-  const corpo = !r ? '<p class="muted">Carregando…</p>' : dep ? (r.cpf ? depositoHtml(r) : cpfFormHtml()) : convidarHtml(r);
-  ov.setAttribute('aria-label', dep ? 'Depositar' : 'Convidar');
+  const r = cart.r, dep = cart.sheet === 'depositar', saq = cart.sheet === 'sacar';
+  const corpo = !r ? '<p class="muted">Carregando…</p>' : dep ? (r.cpf ? depositoHtml(r) : cpfFormHtml()) : saq ? (r.cpf ? saqueHtml(r, true) : cpfFormHtml()) : convidarHtml(r);
+  const titulo = dep ? 'Depositar' : saq ? 'Sacar' : 'Convidar a turma';
+  ov.setAttribute('aria-label', titulo);
   ov.innerHTML = `<div class="sheet">
-      <div class="sheet-head"><h2>${dep ? 'Depositar' : 'Convidar a turma'}</h2><button type="button" class="small" data-sheetclose aria-label="Fechar">✕</button></div>
-      ${r && dep ? `<p class="sheet-saldo">Saldo atual <b>${brl(r.saldo)}</b></p>` : ''}
+      <div class="sheet-head"><h2>${titulo}</h2><button type="button" class="small" data-sheetclose aria-label="Fechar">✕</button></div>
+      ${r && (dep || saq) ? `<p class="sheet-saldo">Saldo atual <b>${brl(r.saldo)}</b>${saq && r.disponivelSaque !== r.saldo ? ` · disponível para saque <b>${brl(r.disponivelSaque)}</b>` : ''}</p>` : ''}
       ${corpo}
     </div>`;
   ov.querySelectorAll('input[id], input[name]').forEach(i => { const v = digitado[i.id || i.name]; if (v) i.value = v; });
@@ -198,15 +193,16 @@ function depositoHtml(r) {
     ${recentes.length ? `<h3>Últimos depósitos</h3><ul class="movs">${recentes.map(x => `<li><span>${brl(x.valor)}</span><b class="${x.status === 'creditado' ? 'pos' : x.status === 'devolver' ? 'neg' : 'muted'}">${esc(STATUS_DEP[x.status] || x.status)}</b><small class="muted">${quando(x.criadoEm)}</small></li>`).join('')}</ul>` : ''}`;
 }
 
-function saqueHtml(r) {
+function saqueHtml(r, janela = false) {
   const bloq = r.regras.saquesBloqueados;
   const recentes = r.saques.slice(0, 5);
   return `${bloq ? '<p class="form-error">Saques suspensos temporariamente para conferência.</p>' : ''}
     <p class="muted" style="font-size:13px;margin:0">O Pix vai para a chave <b>CPF ${esc(r.cpf)}</b>. ${r.regras.saquesPorDia} saque por dia, mínimo de ${brl(r.regras.saqueMinimo)}. O valor sai do saldo na hora e a organização faz o Pix.
     ${r.tarifaSeSacarAgora ? `<br>Tarifa de ${brl(r.tarifaSeSacarAgora)}: sem custo quando você já tiver jogado em entradas o valor que depositou.` : '<br>Sem tarifa.'}</p>
     ${r.bonus && r.bonus.travado ? `<p class="notice" style="font-size:13px">Disponível para saque agora: <b>${brl(r.disponivelSaque)}</b>. ${brl(r.bonus.travado)} do seu saldo é bônus e libera quando você jogar o que falta (veja em Convide a turma).</p>` : ''}
-    <form id="saqForm" class="dep-form" novalidate>
-      <label>Valor (R$)<input id="saqValor" inputmode="decimal" placeholder="0,00" ${bloq ? 'disabled' : ''}></label>
+    <form class="dep-form saq-form" novalidate>
+      <label>Valor (R$)<input class="saq-valor" name="${janela ? 'saqValorJanela' : 'saqValor'}" inputmode="decimal" placeholder="0,00" ${bloq ? 'disabled' : ''}></label>
+      ${r.disponivelSaque > 0 && !bloq ? `<div class="chips"><button type="button" class="small" data-saqtudo="${r.disponivelSaque}">Sacar tudo (${brl(r.disponivelSaque)})</button></div>` : ''}
       <button class="primary" type="submit" ${bloq ? 'disabled' : ''}>Pedir saque</button>
     </form>
     ${recentes.length ? `<h3>Seus saques</h3><ul class="movs">${recentes.map(x => `<li><span>${brl(x.valor)}${x.tarifa ? ` <span class="muted">(recebe ${brl(x.liquido)})</span>` : ''}</span><b class="${x.status === 'pago' ? 'pos' : 'muted'}">${esc(STATUS_SAQ[x.status] || x.status)}</b><small class="muted">${quando(x.criadoEm)}</small></li>`).join('')}</ul>` : ''}`;
@@ -292,16 +288,21 @@ function bindCarteira(r) {
   if (ck) ck.onclick = () => checkDeposito(true);
   const nw = document.querySelector('[data-depnew]');
   if (nw) nw.onclick = () => { stopCarteira(); cart.dep = null; renderCarteira(); };
-  const sf = document.getElementById('saqForm');
-  if (sf) sf.onsubmit = async e => {
-    e.preventDefault();
-    const v = reaisParaCentavos(document.getElementById('saqValor').value);
-    if (!(v > 0)) return toast('Escreva o valor do saque.');
-    const tarifa = r.tarifaSeSacarAgora || 0;
-    if (!confirm(`Sacar ${brl(v)}${tarifa ? ` (tarifa ${brl(tarifa)}, você recebe ${brl(v - tarifa)})` : ''} para a chave Pix CPF ${r.cpf}? O valor sai do saldo agora.`)) return;
-    const out = await callServer('carteiraSacar', { valor: v });
-    if (out) { toast('Saque pedido. A organização vai fazer o Pix.'); loadCarteira(); }
-  };
+  // pedir saque: pela janela do topo ou pela Carteira (cada formulário com o próprio campo)
+  document.querySelectorAll('form.saq-form').forEach(sf => {
+    sf.querySelectorAll('[data-saqtudo]').forEach(b => (b.onclick = () => { sf.querySelector('.saq-valor').value = (b.dataset.saqtudo / 100).toFixed(2).replace('.', ','); }));
+    sf.onsubmit = async e => {
+      e.preventDefault();
+      const v = reaisParaCentavos(sf.querySelector('.saq-valor').value);
+      if (!(v > 0)) return toast('Escreva o valor do saque.');
+      const tarifa = r.tarifaSeSacarAgora || 0;
+      if (!confirm(`Sacar ${brl(v)}${tarifa ? ` (tarifa ${brl(tarifa)}, você recebe ${brl(v - tarifa)})` : ''} para a chave Pix CPF ${r.cpf}? O valor sai do saldo agora.`)) return;
+      const btn = sf.querySelector('button[type=submit]'); btn.disabled = true;
+      const out = await callServer('carteiraSacar', { valor: v });
+      btn.disabled = false;
+      if (out) { sf.querySelector('.saq-valor').value = ''; toast('Saque pedido. A organização vai fazer o Pix.', 5000); loadCarteira(); }
+    };
+  });
 }
 
 // acompanha um depósito: o aviso do banco atualiza o pedido; enquanto isso, confere a cada 6 s
