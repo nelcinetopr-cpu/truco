@@ -642,13 +642,15 @@ function livroHtml(out, busca) {
   const fmt = v => (v ? (v > 0 ? '+' : '−') + brl(Math.abs(v)).replace('R$ ', '') : '');
   const cel = (l, g) => `<td style="text-align:right;white-space:nowrap">${l.mov[g] ? `<b class="${l.mov[g] > 0 ? 'pos' : 'neg'}">${fmt(l.mov[g])}</b><br>` : ''}<span class="muted" style="font-size:11px">${brl(l.saldo[g] || 0)}</span></td>`;
   const desfeitos = new Set(out.lancamentos.filter(l => l.tipo === 'estorno').map(l => l.ref));
+  const comTaxa = new Set(out.lancamentos.filter(l => l.tipo === 'taxa-bancaria').map(l => l.ref));
+  const semTaxa = l => out.moeda === 'BRL' && ['deposito', 'deposito-a-devolver'].includes(l.tipo) && l.ref && /^dep_/.test(l.ref) && !comTaxa.has(l.ref);
   const DESFAZ = ['caixa-entrada', 'caixa-retirada', 'caixa-rendimento', 'caixa-receita', 'caixa-lucro', 'credito-da-casa'];
   let ls = out.lancamentos.slice().reverse();
   if (b) ls = ls.filter(l => Object.keys(l.jogadores).some(k => k.includes(b)) || (l.por || '').includes(b));
   const linhas = ls.map(l => {
     const quem = Object.entries(l.jogadores).map(([k, v]) => `${esc(k)} ${fmt(v)}`).join(', ');
     const dt = new Date(l.at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-    return `<tr${b && Object.keys(l.jogadores).some(k => k.includes(b)) ? ' style="background:rgba(232,181,74,.12)"' : ''}><td style="white-space:nowrap">${dt}</td><td>${esc(TIPO_LANC[l.tipo] || l.tipo)}${quem ? `<br><span class="muted" style="font-size:11px">${quem}</span>` : ''}${l.tipo === 'estorno' ? `<br><span class="muted" style="font-size:11px">desfez: ${esc(TIPO_LANC[l.tipoOriginal] || l.tipoOriginal || '')}</span>` : ''}${l.motivo ? `<br><span class="muted" style="font-size:11px">${esc(l.motivo)}</span>` : ''}${DESFAZ.includes(l.tipo) ? (desfeitos.has(l.id) ? '<br><span class="muted" style="font-size:11px">(desfeito)</span>' : `<br><button class="small" data-desfazer="${esc(l.id)}" data-desc="${esc((TIPO_LANC[l.tipo] || l.tipo) + ' de ' + brl(Math.abs(l.mov.capital || l.mov.custodia || l.mov.jogadores || 0)) + ' em ' + dt)}">Desfazer</button>`) : ''}</td>${cel(l, 'capital')}${cel(l, 'custodia')}${cel(l, 'receita')}${cel(l, 'jogadores')}</tr>`;
+    return `<tr${b && Object.keys(l.jogadores).some(k => k.includes(b)) ? ' style="background:rgba(232,181,74,.12)"' : ''}><td style="white-space:nowrap">${dt}</td><td>${esc(TIPO_LANC[l.tipo] || l.tipo)}${quem ? `<br><span class="muted" style="font-size:11px">${quem}</span>` : ''}${l.tipo === 'estorno' ? `<br><span class="muted" style="font-size:11px">desfez: ${esc(TIPO_LANC[l.tipoOriginal] || l.tipoOriginal || '')}</span>` : ''}${l.motivo ? `<br><span class="muted" style="font-size:11px">${esc(l.motivo)}</span>` : ''}${semTaxa(l) ? `<br><span class="neg" style="font-size:11px">sem a taxa do Mercado Pago</span> <button class="small" data-taxadep="${esc(l.ref)}">Lançar taxa do MP</button>` : ''}${DESFAZ.includes(l.tipo) ? (desfeitos.has(l.id) ? '<br><span class="muted" style="font-size:11px">(desfeito)</span>' : `<br><button class="small" data-desfazer="${esc(l.id)}" data-desc="${esc((TIPO_LANC[l.tipo] || l.tipo) + ' de ' + brl(Math.abs(l.mov.capital || l.mov.custodia || l.mov.jogadores || 0)) + ' em ' + dt)}">Desfazer</button>`) : ''}</td>${cel(l, 'capital')}${cel(l, 'custodia')}${cel(l, 'receita')}${cel(l, 'jogadores')}</tr>`;
   }).join('');
   return `<p class="muted" style="font-size:12px">${ls.length} de ${out.total} lançamentos · moeda ${esc(out.moeda)}</p>
     <div style="overflow-x:auto"><table class="ledger"><thead><tr><th>Quando</th><th>O quê</th><th>Caixa da casa</th><th>Mercado Pago (custódia)</th><th>Receita</th><th>Saldos dos jogadores</th></tr></thead><tbody>${linhas || '<tr><td colspan="6" class="muted">Nada encontrado.</td></tr>'}</tbody></table></div>`;
@@ -693,6 +695,13 @@ async function meuSaldoAcao(a) {
 
 // "Desfazer" no extrato do caixa: lança o contrário (o original continua no extrato)
 function bindDesfazer(el) {
+  el.querySelectorAll('[data-taxadep]').forEach(b => (b.onclick = async () => {
+    if (!confirm('Lançar a taxa do Mercado Pago (1% do depósito) que não foi registrada? Ela sai do valor em custódia e conta como taxa bancária.')) return;
+    b.disabled = true;
+    const r = await callServer('adminTaxaDeposito', { id: b.dataset.taxadep });
+    if (r) { toast(`Taxa de ${brl(r.taxa)} lançada.`); loadBankAdmin(); const btn = document.querySelector('[data-badm="livro"]'); if (btn) btn.click(); }
+    else b.disabled = false;
+  }));
   el.querySelectorAll('[data-desfazer]').forEach(b => (b.onclick = async () => {
     if (!confirm(`Desfazer "${b.dataset.desc}"?
 
