@@ -21,7 +21,7 @@ const reaisParaCentavos = s => {
 const quando = t => new Date(t).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 const STATUS_DEP = { aguardando: 'esperando o Pix', creditado: 'creditado', conferir: 'a organização vai conferir', devolver: 'pago por outro CPF: será devolvido', devolvido: 'devolvido', expirado: 'expirou', cancelado: 'cancelado', erro: 'erro ao gerar', criando: 'gerando' };
 const STATUS_SAQ = { pendente: 'esperando pagamento', pago: 'pago', recusado: 'recusado (valor voltou)' };
-const TIPO_LANC = { deposito: 'Depósito', 'saque-pedido': 'Saque pedido', 'saque-estornado': 'Saque recusado (estorno)', 'saque-pago': 'Saque pago', 'taxa-bancaria': 'Taxa bancária', 'credito-da-casa': 'Saldo dado pela casa', 'entrada-mesa': 'Entrada de mesa', 'premio-mesa': 'Prêmio de mesa', 'devolucao-mesa': 'Entrada devolvida', 'bonus-indicacao': 'Bônus (indicação)', 'caixa-rendimento': 'Rendimento do Mercado Pago', 'inscricao-torneio': 'Inscrição de torneio', 'premio-torneio': 'Prêmio de torneio', 'devolucao-torneio': 'Inscrição de torneio devolvida' };
+const TIPO_LANC = { deposito: 'Depósito', 'saque-pedido': 'Saque pedido', 'saque-estornado': 'Saque recusado (estorno)', 'saque-pago': 'Saque pago', 'taxa-bancaria': 'Taxa bancária', 'credito-da-casa': 'Saldo dado pela casa', 'entrada-mesa': 'Entrada de mesa', 'premio-mesa': 'Prêmio de mesa', 'devolucao-mesa': 'Entrada devolvida', 'bonus-indicacao': 'Bônus (indicação)', 'caixa-rendimento': 'Rendimento do Mercado Pago', 'caixa-entrada': 'Dinheiro colocado no caixa', 'caixa-retirada': 'Dinheiro tirado do caixa', 'caixa-receita': 'Lucro reinvestido no caixa', 'caixa-lucro': 'Lucro retirado', 'inscricao-torneio': 'Inscrição de torneio', 'premio-torneio': 'Prêmio de torneio', 'devolucao-torneio': 'Inscrição de torneio devolvida' };
 const TIPOS_JOGO = ['entrada-mesa', 'premio-mesa', 'devolucao-mesa', 'inscricao-torneio', 'premio-torneio', 'devolucao-torneio'];
 
 function stopCarteira() {
@@ -573,6 +573,11 @@ function renderBankAdmin() {
     <details class="fold" data-fold="alertas"${aberto('alertas')}><summary>Alertas ${qtd(a.alertas.length)}</summary>
     ${a.alertas.length ? `<ul class="movs">${a.alertas.map(x => `<li><span>${esc(x.texto || x.tipo)}</span><button class="small" data-alerta="${esc(x.id)}">Visto</button><small class="muted">${quando(x.at)}</small></li>`).join('')}</ul>` : '<p class="muted">Nenhum alerta.</p>'}
     </details>
+    <details class="fold" data-fold="livro"${aberto('livro')}><summary>Extrato do caixa (todos os lançamentos)</summary>
+    <p class="muted" style="font-size:13px">Cada linha é um lançamento, do mais novo para o mais antigo. As colunas mostram quanto entrou ou saiu e, embaixo, como ficou o saldo logo depois. Para destacar um jogador, escreva o usuário.</p>
+    <div class="row"><input id="livroBusca" autocapitalize="off" placeholder="Usuário (opcional)" style="flex:1 1 140px"><button class="small" data-badm="livro">Ver extrato do caixa</button></div>
+    <div id="livroOut"></div>
+    </details>
     <details class="fold" data-fold="extrato"${aberto('extrato')}><summary>Extrato de um jogador</summary>
     <div class="row"><input id="admExtUser" placeholder="Usuário" style="flex:1 1 140px"><button class="small" data-badm="ext">Ver</button></div>
     <div id="admExt"></div>
@@ -627,6 +632,22 @@ function renderBankAdmin() {
     window.SAQUE_ALVO = null;
   }
 }
+// extrato do caixa: um lançamento por linha, com o saldo das contas da casa logo depois
+function livroHtml(out, busca) {
+  const b = String(busca || '').trim().toLowerCase().replace(/^@/, '');
+  const fmt = v => (v ? (v > 0 ? '+' : '−') + brl(Math.abs(v)).replace('R$ ', '') : '');
+  const cel = (l, g) => `<td style="text-align:right;white-space:nowrap">${l.mov[g] ? `<b class="${l.mov[g] > 0 ? 'pos' : 'neg'}">${fmt(l.mov[g])}</b><br>` : ''}<span class="muted" style="font-size:11px">${brl(l.saldo[g] || 0)}</span></td>`;
+  let ls = out.lancamentos.slice().reverse();
+  if (b) ls = ls.filter(l => Object.keys(l.jogadores).some(k => k.includes(b)) || (l.por || '').includes(b));
+  const linhas = ls.map(l => {
+    const quem = Object.entries(l.jogadores).map(([k, v]) => `${esc(k)} ${fmt(v)}`).join(', ');
+    const dt = new Date(l.at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    return `<tr${b && Object.keys(l.jogadores).some(k => k.includes(b)) ? ' style="background:rgba(232,181,74,.12)"' : ''}><td style="white-space:nowrap">${dt}</td><td>${esc(TIPO_LANC[l.tipo] || l.tipo)}${quem ? `<br><span class="muted" style="font-size:11px">${quem}</span>` : ''}${l.motivo ? `<br><span class="muted" style="font-size:11px">${esc(l.motivo)}</span>` : ''}</td>${cel(l, 'capital')}${cel(l, 'custodia')}${cel(l, 'receita')}${cel(l, 'jogadores')}</tr>`;
+  }).join('');
+  return `<p class="muted" style="font-size:12px">${ls.length} de ${out.total} lançamentos · moeda ${esc(out.moeda)}</p>
+    <div style="overflow-x:auto"><table class="ledger"><thead><tr><th>Quando</th><th>O quê</th><th>Caixa da casa</th><th>Mercado Pago (custódia)</th><th>Receita</th><th>Saldos dos jogadores</th></tr></thead><tbody>${linhas || '<tr><td colspan="6" class="muted">Nada encontrado.</td></tr>'}</tbody></table></div>`;
+}
+
 // pedidos de saque no Telegram: cadastrar o bot (uma vez) e conectar o Telegram de cada organizador
 function avisosHtml(v) {
   if (!v.bot) return `<details><summary>Receber os pedidos de saque no Telegram</summary>
@@ -708,6 +729,13 @@ function bindBankAdmin() {
       const txt = { entrada: 'entrou no Mercado Pago', retirada: 'saiu do Mercado Pago', receita: 'vai da receita para o caixa', rendimento: 'de rendimento entrou no Mercado Pago' }[tipo];
       if (!confirm(`Confirma: ${brl(v)} ${txt}?`)) return;
       return run('adminCaixa', { tipo, valor: v, motivo: document.getElementById('cxMotivo').value.trim() }, 'Caixa atualizado.');
+    }
+    if (a === 'livro') {
+      const el = document.getElementById('livroOut');
+      el.innerHTML = '<p class="muted">Carregando…</p>';
+      const out = await callServer('adminLivro', {});
+      el.innerHTML = out ? livroHtml(out, (document.getElementById('livroBusca') || {}).value) : '';
+      return;
     }
     if (a === 'ligarconvite') {
       const convidado = document.getElementById('liConvidado').value.trim(), por = document.getElementById('liPor').value.trim();
