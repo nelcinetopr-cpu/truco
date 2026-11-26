@@ -185,7 +185,7 @@ function depositoHtml(r) {
   const recentes = r.depositos.filter(x => x.status !== 'criando').slice(0, 5);
   const rapidos = [2000, 5000, 10000].filter(v => v >= min);
   return `<form id="depForm" class="dep-form" novalidate>
-      <label>Valor (R$)<input id="depValor" inputmode="decimal" placeholder="${(min / 100).toFixed(2).replace('.', ',')}"></label>
+      <label>Valor (R$)<input id="depValor" inputmode="decimal" value="${(Math.max(2000, min) / 100).toFixed(2).replace('.', ',')}" placeholder="${(min / 100).toFixed(2).replace('.', ',')}" onfocus="this.select()"></label>
       <div class="chips">${rapidos.map(v => `<button type="button" class="small" data-depval="${v}">${brl(v)}</button>`).join('')}</div>
       <button class="primary" type="submit">Gerar Pix</button>
       <p class="muted" style="font-size:12px;margin:0">Mínimo de ${brl(min)}. O Pix tem de sair de uma conta no seu CPF (${esc(r.cpf)}).</p>

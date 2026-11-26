@@ -117,9 +117,10 @@ main#app { display: grid; gap: 18px; min-width: 0; }
 .score.them b { color: var(--them); }
 .pips { display: flex; gap: 6px; align-items: center; }
 .pip { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--line); }
-.pip.us { background: var(--brass); border-color: var(--brass); }
-.pip.them { background: var(--them); border-color: var(--them); }
-.pip.tie { background: #6f8b7d; border-color: #6f8b7d; }
+/* vazas: ganhou = verde forte, perdeu = vermelho forte, empatou = cinza */
+.pip.us { background: #00e04b; border-color: #7dffa8; box-shadow: 0 0 6px rgba(0,224,75,.7); }
+.pip.them { background: #ff1f1f; border-color: #ff8a8a; box-shadow: 0 0 6px rgba(255,31,31,.7); }
+.pip.tie { background: #9aa3a0; border-color: #c9cfcc; }
 
 .mesa {
   position: relative; width: 100%; contain: layout paint; aspect-ratio: 16 / 10; border-radius: 48% / 46%;
@@ -245,7 +246,7 @@ body.in-game .partner { flex: none; }
   body.in-game .score h3 { font-size: 9px; letter-spacing: .5px; }
   body.in-game .score b { font-size: 20px; }
   body.in-game .pips { gap: 3px; margin-top: 4px !important; }
-  body.in-game .pip { width: 10px; height: 10px; }
+  body.in-game .pip { width: 13px; height: 13px; }
   body.in-game .vira-tile .card { width: 20px; font-size: 7px; }
   body.in-game .vira-tile .vlbl { font-size: 0; }
   body.in-game .vira-tile .mrk { font-size: 18px; }
@@ -710,7 +711,7 @@ button.top-saldo, .top-saldo button { background: var(--felt-deep); color: var(-
 <script src="truco-engine.js?v=20261126a"></script>
 <script src="poker.js?v=20261124b"></script>
 <!-- ao mudar truco-engine.js, poker.js ou carteira.js, troque o ?v= para o navegador baixar de novo -->
-<script src="carteira.js?v=20261126d"></script>
+<script src="carteira.js?v=20261126e"></script>
 <script src="social.js?v=20261125c"></script>
 <script>
 /* =========================================================
