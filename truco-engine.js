@@ -37,11 +37,21 @@
   function teamLabel(t) { return t === 0 ? 'Time 1' : 'Time 2'; }
   function addLog(st, text) { st.log = [text, ...(st.log || [])].slice(0, 10); }
 
+  // CARTAS MELHORES PARA TODOS: o baralho é embaralhado de novo até cada jogador ter pelo menos
+  // uma carta forte (manilha, 3, 2 ou Ás). Vale igual para todos os lugares da mesa.
+  const BOAS_POR_JOGADOR = 1, TENTATIVAS_DEAL = 60;
+  function cartaForte(c, vira) { return isManilha(c, vira) || c[0] === '3' || c[0] === '2' || c[0] === 'A'; }
+  function maosBoas(hands, vira) { return hands.every(h => h.filter(c => cartaForte(c, vira)).length >= BOAS_POR_JOGADOR); }
   function deal(st, rng = randInt) {
-    const n = st.n, deck = newDeck(rng);
-    const hands = [];
-    for (let s = 0; s < n; s++) hands.push(deck.splice(0, 3));
-    const vira = deck.pop();
+    const n = st.n;
+    let deck, hands, vira;
+    for (let t = 0; t < TENTATIVAS_DEAL; t++) {
+      deck = newDeck(rng);
+      hands = [];
+      for (let s = 0; s < n; s++) hands.push(deck.splice(0, 3));
+      vira = deck.pop();
+      if (maosBoas(hands, vira)) break;
+    }
     const mao = (st.dealer + 1) % n;
     const [a, b] = st.score;
     const ferro = a === 11 && b === 11;
@@ -279,7 +289,7 @@
 
   return {
     RANKS, SUITS, SUIT_SYM, RAISE_NAME, NEXT_VALUE, team,
-    manilhaRank, isManilha, strength, cardLabel, randInt, newDeck,
+    manilhaRank, isManilha, strength, cardLabel, randInt, newDeck, cartaForte, maosBoas,
     nextOfTeam, firstOfTeamFrom, nick, teamLabel, addLog,
     deal, decideHand, endHand, playCard, canCallTruco, canRespond, currentActor, lowestCardIndex,
     applyAction, timeoutMove,
