@@ -21,7 +21,7 @@ const reaisParaCentavos = s => {
 const quando = t => new Date(t).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 const STATUS_DEP = { aguardando: 'esperando o Pix', creditado: 'creditado', conferir: 'a organização vai conferir', devolver: 'pago por outro CPF: será devolvido', devolvido: 'devolvido', expirado: 'expirou', cancelado: 'cancelado', erro: 'erro ao gerar', criando: 'gerando' };
 const STATUS_SAQ = { pendente: 'esperando pagamento', pago: 'pago', recusado: 'recusado (valor voltou)' };
-const TIPO_LANC = { deposito: 'Depósito', 'saque-pedido': 'Saque pedido', 'saque-estornado': 'Saque recusado (estorno)', 'saque-pago': 'Saque pago', 'taxa-bancaria': 'Taxa bancária', 'credito-da-casa': 'Saldo dado pela casa', 'entrada-mesa': 'Entrada de mesa', 'premio-mesa': 'Prêmio de mesa', 'devolucao-mesa': 'Entrada devolvida', 'bonus-indicacao': 'Bônus (indicação)', 'caixa-rendimento': 'Rendimento do Mercado Pago', 'caixa-entrada': 'Dinheiro colocado no caixa', 'caixa-retirada': 'Dinheiro tirado do caixa', 'caixa-receita': 'Lucro reinvestido no caixa', 'caixa-lucro': 'Lucro retirado', estorno: 'Desfeito (estorno)', 'inscricao-torneio': 'Inscrição de torneio', 'premio-torneio': 'Prêmio de torneio', 'devolucao-torneio': 'Inscrição de torneio devolvida' };
+const TIPO_LANC = { deposito: 'Depósito', 'saque-pedido': 'Saque pedido', 'saque-estornado': 'Saque recusado (estorno)', 'saque-pago': 'Saque pago', 'taxa-bancaria': 'Taxa bancária', 'credito-da-casa': 'Saldo dado pela casa', 'entrada-mesa': 'Entrada de mesa', 'premio-mesa': 'Prêmio de mesa', 'devolucao-mesa': 'Entrada devolvida', 'bonus-indicacao': 'Bônus (indicação)', 'caixa-rendimento': 'Rendimento do Mercado Pago', 'caixa-entrada': 'Dinheiro colocado no caixa', 'caixa-retirada': 'Dinheiro tirado do caixa', 'caixa-receita': 'Lucro reinvestido no caixa', 'caixa-lucro': 'Lucro retirado', estorno: 'Desfeito (estorno)', 'bonus-removido': 'Bônus removido (organizador)', 'saldo-ao-caixa': 'Saldo enviado ao caixa', 'inscricao-torneio': 'Inscrição de torneio', 'premio-torneio': 'Prêmio de torneio', 'devolucao-torneio': 'Inscrição de torneio devolvida' };
 const TIPOS_JOGO = ['entrada-mesa', 'premio-mesa', 'devolucao-mesa', 'inscricao-torneio', 'premio-torneio', 'devolucao-torneio'];
 
 function stopCarteira() {
@@ -573,6 +573,10 @@ function renderBankAdmin() {
     <details class="fold" data-fold="alertas"${aberto('alertas')}><summary>Alertas ${qtd(a.alertas.length)}</summary>
     ${a.alertas.length ? `<ul class="movs">${a.alertas.map(x => `<li><span>${esc(x.texto || x.tipo)}</span><button class="small" data-alerta="${esc(x.id)}">Visto</button><small class="muted">${quando(x.at)}</small></li>`).join('')}</ul>` : '<p class="muted">Nenhum alerta.</p>'}
     </details>
+    <details class="fold" data-fold="meusaldo"${aberto('meusaldo')}><summary>Meu saldo de organizador (bônus e saldo de teste)</summary>
+    <p class="muted" style="font-size:13px">Organizador não usa bônus. Aqui você tira do <b>seu</b> saldo o bônus que ganhou (ele deixa de ser custo da casa) ou envia o seu saldo para o caixa da casa. Só mexe na sua conta.</p>
+    <div id="meuSaldoOut"><button class="small" data-badm="meusaldo">Ver meu saldo</button></div>
+    </details>
     <details class="fold" data-fold="livro"${aberto('livro')}><summary>Extrato do caixa (todos os lançamentos)</summary>
     <p class="muted" style="font-size:13px">Cada linha é um lançamento, do mais novo para o mais antigo. As colunas mostram quanto entrou ou saiu e, embaixo, como ficou o saldo logo depois. Para destacar um jogador, escreva o usuário.</p>
     <div class="row"><input id="livroBusca" autocapitalize="off" placeholder="Usuário (opcional)" style="flex:1 1 140px"><button class="small" data-badm="livro">Ver extrato do caixa</button></div>
@@ -648,6 +652,43 @@ function livroHtml(out, busca) {
   }).join('');
   return `<p class="muted" style="font-size:12px">${ls.length} de ${out.total} lançamentos · moeda ${esc(out.moeda)}</p>
     <div style="overflow-x:auto"><table class="ledger"><thead><tr><th>Quando</th><th>O quê</th><th>Caixa da casa</th><th>Mercado Pago (custódia)</th><th>Receita</th><th>Saldos dos jogadores</th></tr></thead><tbody>${linhas || '<tr><td colspan="6" class="muted">Nada encontrado.</td></tr>'}</tbody></table></div>`;
+}
+
+// meu saldo de organizador: remover bônus / enviar ao caixa
+function meuSaldoHtml(r) {
+  return `<table class="ledger"><tbody>
+      <tr><td>Meu saldo</td><td><b>${brl(r.saldo)}</b></td></tr>
+      <tr><td>Bônus que ganhei</td><td>${brl(r.bonus)}</td></tr>
+      <tr><td>Saldo sem bônus</td><td>${brl(r.livre)}</td></tr>
+    </tbody></table>
+    <div class="row">
+      ${r.bonus ? `<button class="small danger" data-ms="msremover">Remover meus bônus (${brl(r.bonus)})</button>` : ''}
+      ${r.livre ? `<label style="flex:1 1 110px">Valor (R$)<input id="msValor" inputmode="decimal" placeholder="tudo: ${brl(r.livre).replace('R$ ', '')}"></label><button class="small primary" data-ms="mscaixa">Enviar ao caixa da casa</button>` : ''}
+      ${!r.bonus && !r.livre ? '<span class="muted">Nada para tirar.</span>' : ''}
+    </div>`;
+}
+
+async function meuSaldoAcao(a) {
+    const el = document.getElementById('meuSaldoOut');
+    let args = { acao: 'estado' };
+    if (a === 'msremover') {
+      if (!confirm('Remover os bônus do seu saldo? O valor sai do seu saldo e deixa de contar como custo da casa. Não dá para desfazer.')) return;
+      args = { acao: 'remover-bonus' };
+    }
+    if (a === 'mscaixa') {
+      const txt = (document.getElementById('msValor') || {}).value || '';
+      const v = txt.trim() ? Math.round(parseFloat(txt.replace(/\./g, '').replace(',', '.')) * 100) : 'tudo';
+      if (v !== 'tudo' && !(v > 0)) return toast('Valor inválido.');
+      if (!confirm(`Enviar ${v === 'tudo' ? 'todo o seu saldo (sem bônus)' : brl(v)} para o caixa da casa?`)) return;
+      args = { acao: 'enviar-caixa', valor: v };
+    }
+    const r = await callServer('adminMeuSaldo', args);
+    if (r) {
+      el.innerHTML = meuSaldoHtml(r);
+      el.querySelectorAll('[data-ms]').forEach(x => (x.onclick = () => meuSaldoAcao(x.dataset.ms)));
+      if (a !== 'meusaldo') { toast(a === 'msremover' ? 'Bônus removidos do seu saldo.' : 'Saldo enviado ao caixa da casa.'); await loadBankAdmin(); meuSaldoAcao('meusaldo'); }
+    }
+    return;
 }
 
 // "Desfazer" no extrato do caixa: lança o contrário (o original continua no extrato)
@@ -745,6 +786,7 @@ function bindBankAdmin() {
       if (!confirm(`Confirma: ${brl(v)} ${txt}?`)) return;
       return run('adminCaixa', { tipo, valor: v, motivo: document.getElementById('cxMotivo').value.trim() }, 'Caixa atualizado.');
     }
+    if (a === 'meusaldo') return meuSaldoAcao('meusaldo');
     if (a === 'livro') {
       const el = document.getElementById('livroOut');
       el.innerHTML = '<p class="muted">Carregando…</p>';
