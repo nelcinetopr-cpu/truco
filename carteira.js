@@ -21,7 +21,7 @@ const reaisParaCentavos = s => {
 const quando = t => new Date(t).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 const STATUS_DEP = { aguardando: 'esperando o Pix', creditado: 'creditado', conferir: 'a organização vai conferir', devolver: 'pago por outro CPF: será devolvido', devolvido: 'devolvido', expirado: 'expirou', cancelado: 'cancelado', erro: 'erro ao gerar', criando: 'gerando' };
 const STATUS_SAQ = { pendente: 'esperando pagamento', pago: 'pago', recusado: 'recusado (valor voltou)' };
-const TIPO_LANC = { deposito: 'Depósito', 'saque-pedido': 'Saque pedido', 'saque-estornado': 'Saque recusado (estorno)', 'saque-pago': 'Saque pago', 'taxa-bancaria': 'Taxa bancária', 'credito-da-casa': 'Saldo dado pela casa', 'entrada-mesa': 'Entrada de mesa', 'premio-mesa': 'Prêmio de mesa', 'devolucao-mesa': 'Entrada devolvida', 'bonus-indicacao': 'Bônus (indicação)', 'caixa-rendimento': 'Rendimento do Mercado Pago', 'caixa-entrada': 'Dinheiro colocado no caixa', 'caixa-retirada': 'Dinheiro tirado do caixa', 'caixa-receita': 'Lucro reinvestido no caixa', 'caixa-lucro': 'Lucro retirado', 'inscricao-torneio': 'Inscrição de torneio', 'premio-torneio': 'Prêmio de torneio', 'devolucao-torneio': 'Inscrição de torneio devolvida' };
+const TIPO_LANC = { deposito: 'Depósito', 'saque-pedido': 'Saque pedido', 'saque-estornado': 'Saque recusado (estorno)', 'saque-pago': 'Saque pago', 'taxa-bancaria': 'Taxa bancária', 'credito-da-casa': 'Saldo dado pela casa', 'entrada-mesa': 'Entrada de mesa', 'premio-mesa': 'Prêmio de mesa', 'devolucao-mesa': 'Entrada devolvida', 'bonus-indicacao': 'Bônus (indicação)', 'caixa-rendimento': 'Rendimento do Mercado Pago', 'caixa-entrada': 'Dinheiro colocado no caixa', 'caixa-retirada': 'Dinheiro tirado do caixa', 'caixa-receita': 'Lucro reinvestido no caixa', 'caixa-lucro': 'Lucro retirado', estorno: 'Desfeito (estorno)', 'inscricao-torneio': 'Inscrição de torneio', 'premio-torneio': 'Prêmio de torneio', 'devolucao-torneio': 'Inscrição de torneio devolvida' };
 const TIPOS_JOGO = ['entrada-mesa', 'premio-mesa', 'devolucao-mesa', 'inscricao-torneio', 'premio-torneio', 'devolucao-torneio'];
 
 function stopCarteira() {
@@ -637,15 +637,30 @@ function livroHtml(out, busca) {
   const b = String(busca || '').trim().toLowerCase().replace(/^@/, '');
   const fmt = v => (v ? (v > 0 ? '+' : '−') + brl(Math.abs(v)).replace('R$ ', '') : '');
   const cel = (l, g) => `<td style="text-align:right;white-space:nowrap">${l.mov[g] ? `<b class="${l.mov[g] > 0 ? 'pos' : 'neg'}">${fmt(l.mov[g])}</b><br>` : ''}<span class="muted" style="font-size:11px">${brl(l.saldo[g] || 0)}</span></td>`;
+  const desfeitos = new Set(out.lancamentos.filter(l => l.tipo === 'estorno').map(l => l.ref));
+  const DESFAZ = ['caixa-entrada', 'caixa-retirada', 'caixa-rendimento', 'caixa-receita', 'caixa-lucro', 'credito-da-casa'];
   let ls = out.lancamentos.slice().reverse();
   if (b) ls = ls.filter(l => Object.keys(l.jogadores).some(k => k.includes(b)) || (l.por || '').includes(b));
   const linhas = ls.map(l => {
     const quem = Object.entries(l.jogadores).map(([k, v]) => `${esc(k)} ${fmt(v)}`).join(', ');
     const dt = new Date(l.at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-    return `<tr${b && Object.keys(l.jogadores).some(k => k.includes(b)) ? ' style="background:rgba(232,181,74,.12)"' : ''}><td style="white-space:nowrap">${dt}</td><td>${esc(TIPO_LANC[l.tipo] || l.tipo)}${quem ? `<br><span class="muted" style="font-size:11px">${quem}</span>` : ''}${l.motivo ? `<br><span class="muted" style="font-size:11px">${esc(l.motivo)}</span>` : ''}</td>${cel(l, 'capital')}${cel(l, 'custodia')}${cel(l, 'receita')}${cel(l, 'jogadores')}</tr>`;
+    return `<tr${b && Object.keys(l.jogadores).some(k => k.includes(b)) ? ' style="background:rgba(232,181,74,.12)"' : ''}><td style="white-space:nowrap">${dt}</td><td>${esc(TIPO_LANC[l.tipo] || l.tipo)}${quem ? `<br><span class="muted" style="font-size:11px">${quem}</span>` : ''}${l.tipo === 'estorno' ? `<br><span class="muted" style="font-size:11px">desfez: ${esc(TIPO_LANC[l.tipoOriginal] || l.tipoOriginal || '')}</span>` : ''}${l.motivo ? `<br><span class="muted" style="font-size:11px">${esc(l.motivo)}</span>` : ''}${DESFAZ.includes(l.tipo) ? (desfeitos.has(l.id) ? '<br><span class="muted" style="font-size:11px">(desfeito)</span>' : `<br><button class="small" data-desfazer="${esc(l.id)}" data-desc="${esc((TIPO_LANC[l.tipo] || l.tipo) + ' de ' + brl(Math.abs(l.mov.capital || l.mov.custodia || l.mov.jogadores || 0)) + ' em ' + dt)}">Desfazer</button>`) : ''}</td>${cel(l, 'capital')}${cel(l, 'custodia')}${cel(l, 'receita')}${cel(l, 'jogadores')}</tr>`;
   }).join('');
   return `<p class="muted" style="font-size:12px">${ls.length} de ${out.total} lançamentos · moeda ${esc(out.moeda)}</p>
     <div style="overflow-x:auto"><table class="ledger"><thead><tr><th>Quando</th><th>O quê</th><th>Caixa da casa</th><th>Mercado Pago (custódia)</th><th>Receita</th><th>Saldos dos jogadores</th></tr></thead><tbody>${linhas || '<tr><td colspan="6" class="muted">Nada encontrado.</td></tr>'}</tbody></table></div>`;
+}
+
+// "Desfazer" no extrato do caixa: lança o contrário (o original continua no extrato)
+function bindDesfazer(el) {
+  el.querySelectorAll('[data-desfazer]').forEach(b => (b.onclick = async () => {
+    if (!confirm(`Desfazer "${b.dataset.desc}"?
+
+O lançamento continua no extrato e entra um lançamento ao contrário que anula o efeito dele. Só dá para desfazer uma vez.`)) return;
+    b.disabled = true;
+    const ok = await callServer('adminEstornar', { id: b.dataset.desfazer, motivo: 'desfeito pelo extrato do caixa' });
+    if (ok) { toast('Lançamento desfeito.'); loadBankAdmin(); const btn = document.querySelector('[data-badm="livro"]'); if (btn) btn.click(); }
+    else b.disabled = false;
+  }));
 }
 
 // pedidos de saque no Telegram: cadastrar o bot (uma vez) e conectar o Telegram de cada organizador
@@ -735,6 +750,7 @@ function bindBankAdmin() {
       el.innerHTML = '<p class="muted">Carregando…</p>';
       const out = await callServer('adminLivro', {});
       el.innerHTML = out ? livroHtml(out, (document.getElementById('livroBusca') || {}).value) : '';
+      bindDesfazer(el);
       return;
     }
     if (a === 'ligarconvite') {
