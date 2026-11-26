@@ -585,6 +585,7 @@ body.in-game .games { display: none; }
   width: min(300px, 86%); padding: 16px 18px; border-radius: 16px; background: rgba(9, 32, 24, .95); border: 2px solid var(--brass); box-shadow: 0 18px 50px rgba(0,0,0,.6); }
 .end-pop > b, .pk-pop > b { font-family: var(--display); font-weight: 400; font-size: 24px; color: var(--brass); }
 .end-pop button, .pk-pop button { width: 100%; padding: 12px 14px; font-size: 16px; }
+.end-btns { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 8px; } /* revanche do lado do levantar */
 .pk-pop .presult { background: none; padding: 0; }
 .pixbox { display: grid; gap: 10px; justify-items: start; }
 .pixqr { width: min(220px, 70vw); aspect-ratio: 1; background: #fff; border-radius: 10px; padding: 8px; }
@@ -977,6 +978,9 @@ const AUTH_MSG = {
 let db = null, myId = null, canWrite = true, localMode = false;
 let cur = null, code = null, unsubTable = null, unsubList = null, busy = false, cover = false;
 const SEGURAR_MS = 450; let semCliqueAte = 0; // segurar a carta = jogar coberta
+let dedoNaCarta = false; // o dedo continua apertado (vale para a tela toda)
+addEventListener('pointerdown', () => { dedoNaCarta = true; }, true);
+['pointerup', 'pointercancel'].forEach(ev => addEventListener(ev, () => { dedoNaCarta = false; }, true));
 // PAUSA DA VAZA: quando uma vaza fecha (alguém matou), ninguém joga por um instante,
 // para todo mundo ver quem matou antes da próxima carta.
 const VAZA_PAUSA_MS = 1000; let vazaChave = null, vazaFechouEm = 0, vazaTimer = null;
@@ -3347,8 +3351,9 @@ function render() {
     const title = seated ? (w0 === us ? 'Vocês ganharam!' : 'Vocês perderam') : teamLabel(w0) + ' ganhou';
     const btns = solo ? '<button class="primary" data-act="newGame">Nova partida</button><button data-act="lobby">Levantar da mesa</button>'
       : st.torneio ? '<button class="primary" data-act="tour">Voltar ao torneio</button>'
-      : '<button class="primary" data-act="lobby">Levantar da mesa</button>';
-    endPop = `<div class="end-pop" role="dialog" aria-label="Fim da partida"><b>${title}</b><span>${Math.min(st.score[w0], 12)} a ${st.score[1 - w0]}</span>${btns}</div>`;
+      : `${revancheBtn(st)}<button data-act="lobby">Levantar da mesa</button>`;
+    const quemPediu = !solo && st.revanche && st.revanchePor && st.revanchePor !== myId ? `<span class="muted">${esc(st.names[st.revanchePor] || st.revanchePor)} pediu revanche</span>` : '';
+    endPop = `<div class="end-pop" role="dialog" aria-label="Fim da partida"><b>${title}</b><span>${Math.min(st.score[w0], 12)} a ${st.score[1 - w0]}</span>${quemPediu}<div class="end-btns">${btns}</div></div>`;
   }
   saveChatDraft();
   const prevHand = captureHand();
@@ -3392,14 +3397,16 @@ function render() {
       if (onServer()) return serverMove('trucoJogar', { action: { type: 'play', index: i, covered: c } });
       commit(s => applyAction(s, me, { type: 'play', index: i, covered: c }));
     };
-    let t = null;
+    let t = null, apertou = 0;
     const soltar = () => { if (t) clearTimeout(t); t = null; b.classList.remove('segurando'); };
     b.addEventListener('pointerdown', e => {
       if (e.button > 0 || b.disabled) return;
       soltar();
+      apertou = Date.now();
       if (podeCobrir) b.classList.add('segurando');
       t = setTimeout(() => {
         t = null; b.classList.remove('segurando');
+        if (!b.isConnected || !dedoNaCarta) return; // a mesa mudou ou o dedo já saiu: não joga nada
         semCliqueAte = Date.now() + 800; // o "soltar o dedo" não pode virar um toque em outra carta
         if (!podeCobrir) return toast('Coberta só da segunda vaza em diante.');
         if (navigator.vibrate) navigator.vibrate(30);
@@ -3408,11 +3415,18 @@ function render() {
     });
     ['pointerup', 'pointercancel', 'pointerleave'].forEach(ev => b.addEventListener(ev, soltar));
     b.addEventListener('contextmenu', e => e.preventDefault());
-    b.onclick = () => { if (Date.now() < semCliqueAte) return; jogar(cover); };
+    b.onclick = e => {
+      if (Date.now() < semCliqueAte) return;
+      // toque de verdade nesta carta: apertou aqui há pouco (teclado não tem "apertar": e.detail = 0)
+      if (e && e.detail !== 0 && (!apertou || Date.now() - apertou > 1500)) return;
+      apertou = 0;
+      jogar(cover);
+    };
   });
   const cv = document.getElementById('cover'); if (cv) cv.onclick = () => { cover = !cover; render(); };
   $app.querySelectorAll('[data-act]').forEach(b => (b.onclick = () => {
     if (b.dataset.confirm && !confirm(b.dataset.confirm)) return;
+    if (b.dataset.act === 'revanche') return pedirRevanche();
     return b.dataset.act === 'lobby' ? showLobby() : b.dataset.act === 'tour' ? openTournament(cur.torneio.tid) : act(b.dataset.act);
   }));
 }
@@ -3640,6 +3654,37 @@ function slideSound(c, t, vol) {
   src.connect(hp).connect(lp).connect(g).connect(c.destination);
   src.start(t, Math.random() * 0.3);
   src.stop(t + dur + 0.08);   // para só depois de já estar em silêncio
+}
+
+/* REVANCHE: o primeiro que pede cria a mesa nova (mesmo modo e valor) e senta na mesma cadeira;
+   os outros veem "Aceitar revanche" e sentam na mesma cadeira. Cheia, começa sozinha. */
+let revancheSentei = null;
+function revancheBtn(st) {
+  if (solo || !onServer() || mySeat() < 0) return '';
+  const valor = st.stake ? ` (R$ ${esc(st.stake)})` : '';
+  if (st.revanche && (st.revanchePor === myId || revancheSentei === st.revanche)) return '<button class="primary" data-act="revanche">Ir para a revanche</button>';
+  if (st.revanche) return `<button class="primary" data-act="revanche">Aceitar revanche${valor}</button>`;
+  return `<button class="primary" data-act="revanche">Revanche${valor}</button>`;
+}
+async function pedirRevanche() {
+  const st = cur; if (!st || busy) return;
+  const me = mySeat(); if (me < 0) return;
+  busy = true;
+  try {
+    let alvo = null;
+    if (st.revanche && st.revanchePor !== myId && revancheSentei !== st.revanche) {
+      const r = await callServer('trucoSentar', { code: st.revanche, seat: me });
+      if (r) alvo = st.revanche;
+    } else if (st.revanche) alvo = st.revanche;
+    else {
+      const r = await callServer('trucoRevanche', { code });
+      if (r && r.code) {
+        if (r.ja) { const ok = await callServer('trucoSentar', { code: r.code, seat: r.seat }); if (!ok) return; }
+        alvo = r.code;
+      }
+    }
+    if (alvo) { revancheSentei = alvo; busy = false; openTable(alvo); }
+  } finally { busy = false; }
 }
 
 function act(a, me = mySeat()) {
